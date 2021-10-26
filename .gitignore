@@ -1,7 +1,14 @@
+.gitignore
+.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# data
+data/*
+
+test.py
 
 # C extensions
 *.so
