@@ -8,7 +8,7 @@ import torch.nn as nn
 
 import ops
 from nni.retiarii.nn.pytorch import LayerChoice, InputChoice
-# without regularizer
+from hyperDARTS import DartsInputChoice, DartsLayerChoice
 
 
 class AuxiliaryHead(nn.Module):
@@ -65,6 +65,14 @@ class Node(nn.Module):
         out = [self.drop_path(o) if o is not None else None for o in out]
         return self.input_switch(out)
 
+    def _hyperloss(self, lam=torch.tensor(0.0)):
+        assert isinstance(self.input_switch, DartsInputChoice)
+        hyperloss = self.input_switch._hyperloss(lam)
+        for op in self.ops:
+            assert isinstance(op, DartsLayerChoice)
+            hyperloss += op._hyperloss(lam)
+        return hyperloss
+        
 
 class Cell(nn.Module):
 
@@ -97,6 +105,9 @@ class Cell(nn.Module):
 
         output = torch.cat(tensors[2:], dim=1)
         return output
+
+    def _hyperloss(self, lam=torch.tensor(0.0)):
+        return sum([node._hyperloss(lam) for node in self.mutable_ops])
 
 
 class CNN(nn.Module):
@@ -162,3 +173,9 @@ class CNN(nn.Module):
         for module in self.modules():
             if isinstance(module, ops.DropPath):
                 module.p = p
+
+    def _hyperloss(self, lam=torch.tensor(0.0)):
+        for cell in self.cells:
+            return cell._hyperloss(lam)
+
+

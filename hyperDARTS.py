@@ -1,14 +1,15 @@
-
 import torch
 import torch.nn.functional as F
 from hypernet import PWNet
-from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, DartsInputChoice, DartsTrainer
-from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, replace_layer_choice,\
-    replace_input_choice, to_device
+from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
+        DartsInputChoice, DartsTrainer
+from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
+        replace_layer_choice, replace_input_choice, to_device
 
 
 class HyperDartsLayerChoice(DartsLayerChoice):
-    def __init__(self, layer_choice, num_kernels=5, sampling_mode='gumbel-softmax', t=0.2, *args, **kwargs):
+    def __init__(self, layer_choice, num_kernels=5, 
+            sampling_mode='gumbel-softmax', t=0.2, *args, **kwargs):
         """
         Params:
             num_kernels: int, number of kernels in PWNet
@@ -22,6 +23,11 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         self.t = t
         delattr(self, 'alpha')
         self.alpha = self.pw_net.parameters()
+        self.op_param_num = []
+        for op in self.op_choices.values():
+            self.op_param_num.append(sum([torch.prod(torch.tensor(p.size())).item() \
+                    for p in op.parameters()]))
+        self.op_param_num = torch.tensor(self.op_param_num)
 
     def forward(self, inputs, lam=torch.tensor(0.0)):
         op_results = torch.stack([op(inputs) for op in self.op_choices.values()])
@@ -34,6 +40,11 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         if self.sampling_mode == 'softmax':
             weights = F.softmax(pw_net_outputs / self.t, dim=-1)
         return torch.sum(op_results * weights.view(*alpha_shape), 0)
+
+    def _hyperloss(self, lam=torch.tensor(0.0)):
+        pw_net_outputs = self.pw_net(lam)
+        weights = F.softmax(pw_net_outputs, dim=-1)
+        return lam * self.op_param_num @ weights
 
     def export(self, lam=torch.tensor(0.0)):
         pw_net_outputs = self.pw_net(lam)
@@ -63,6 +74,9 @@ class HyperDartsInputChoice(DartsInputChoice):
             ).sample()
             return torch.sum(inputs * weights.view(*alpha_shape), 0)
 
+    def _hyperloss(self, lam=torch.tensor(0.0)):
+        return torch.tensor(0.0)
+
     def export(self, lam=torch.tensor(0.0)):
         pw_net_outputs = self.pw_net(lam)
         return torch.argsort(-pw_net_outputs).cpu().numpy().tolist()[:self.n_chosen]
@@ -71,9 +85,12 @@ class HyperDartsInputChoice(DartsInputChoice):
 class HyperDartsTrainer(DartsTrainer):
     def __init__(self, model, loss, metrics, optimizer,
                  num_epochs, dataset, grad_clip=5.,
-                 learning_rate=2.5E-3, batch_size=64, workers=4,
+                 batch_size=64, workers=4,
                  device=None, log_frequency=None,
-                 arc_learning_rate=3.0E-4, unrolled=False):
+                 arc_learning_rate=3.0E-4, betas=(0.5, 0.999),
+                 arc_weight_decay=1e-3, unrolled=False,
+                 sampling_mode='softmax', t=1.0
+                 ):
         # super(HyperDartsTrainer, self).__init__(*args, **kwargs)
         self.model = model
         self.loss = loss
@@ -82,13 +99,16 @@ class HyperDartsTrainer(DartsTrainer):
         self.dataset = dataset
         self.batch_size = batch_size
         self.workers = workers
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') \
+                if device is None else device
         self.log_frequency = log_frequency
         self.model.to(self.device)
 
         self.nas_modules = []
-        replace_layer_choice(self.model, HyperDartsLayerChoice, self.nas_modules)
-        replace_input_choice(self.model, HyperDartsInputChoice, self.nas_modules)
+        replace_layer_choice(self.model, lambda lay_choice: HyperDartsLayerChoice(
+            lay_choice, sampling_mode=sampling_mode, t=t), self.nas_modules)
+        replace_input_choice(self.model, lambda lay_choice: HyperDartsInputChoice(
+            lay_choice,sampling_mode=sampling_mode, t=t), self.nas_modules)
         for _, module in self.nas_modules:
             module.to(self.device)
 
@@ -97,7 +117,8 @@ class HyperDartsTrainer(DartsTrainer):
         ctrl_params = {}
         for _, m in self.nas_modules:
             if m.name in ctrl_params:
-                assert m.alpha.size() == ctrl_params[m.name].size(), 'Size of parameters with the same label should be same.'
+                assert m.alpha.size() == ctrl_params[m.name].size(), \
+                        'Size of parameters with the same label should be same.'
                 m.alpha = ctrl_params[m.name]
             else:
                 ctrl_params[m.name] = m.alpha
@@ -105,10 +126,10 @@ class HyperDartsTrainer(DartsTrainer):
         list_of_params = []
         for params in ctrl_params.values():
             list_of_params.extend(params)
-        self.ctrl_optim = torch.optim.Adam(list_of_params, 3e-4, betas=(0.5, 0.999),
+        self.ctrl_optim = torch.optim.Adam(list_of_params, arc_learning_rate, betas=betas,
                                            weight_decay=1.0E-3)
         self.unrolled = unrolled
-        self.grad_clip = 5.
+        self.grad_clip = grad_clip
 
         self._init_dataloader()
 
@@ -118,7 +139,8 @@ class HyperDartsTrainer(DartsTrainer):
         else:
             lam = torch.tensor(0.0)
         logits = self.model(X, lam)
-        loss = self.loss(logits, y)
+        hyperloss = self.model._hyperloss(lam)
+        loss = self.loss(logits, y) + hyperloss
         return logits, loss
 
 
