@@ -31,7 +31,7 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         for op in self.op_choices.values():
             self.op_param_num.append(sum([torch.prod(torch.tensor(p.size())).item() \
                     for p in op.parameters()]))
-        self.op_param_num = torch.tensor(self.op_param_num)
+        self.op_param_num = nn.Parameter(torch.tensor(self.op_param_num), requires_grad=False)
 
     def forward(self, inputs, lam=torch.tensor(0.0)):
         op_results = torch.stack([op(inputs) for op in self.op_choices.values()])
@@ -80,7 +80,7 @@ class HyperDartsInputChoice(DartsInputChoice):
             return torch.sum(inputs * weights.view(*alpha_shape), 0)
 
     def _hyperloss(self, lam=torch.tensor(0.0)):
-        return torch.tensor(0.0)
+        return lam * 0
 
     def export(self, lam=torch.tensor(0.0)):
         pw_net_outputs = self.pw_net(lam)
@@ -143,7 +143,7 @@ class HyperDartsTrainer(DartsTrainer):
 
     def _logits_and_loss(self, X, y, lam=torch.tensor(0.0)):
         logits = self.model(X, lam)
-        hyperloss = self.model._hyperloss(lam)
+        hyperloss = self.model._hyperloss(lam.to(self.device))
         loss = self.loss(logits, y) + hyperloss
         return logits, loss
 
