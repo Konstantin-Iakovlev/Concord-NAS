@@ -30,6 +30,14 @@ class Cutout(object):
         return img
 
 
+class Flip(object):
+    def __init__(self):
+        pass
+
+    def __call__(self, tensor):
+        return torch.transpose(tensor, -1, -2) 
+
+
 def get_dataset(cls, cutout_length=0):
     MEAN = [0.49139968, 0.48215827, 0.44653124]
     STD = [0.24703233, 0.24348505, 0.26158768]
@@ -54,8 +62,9 @@ def get_dataset(cls, cutout_length=0):
         dataset_valid = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
     elif cls == 'MNIST':
         print('The dataset is MNIST')
-        dataset_train = MNIST(root="./data", train=True, download=True, transform=transforms.ToTensor())
-        dataset_valid = MNIST(root="./data", train=False, download=True, transform=transforms.ToTensor())
+        composed = transforms.Compose([transforms.ToTensor(), Flip()])
+        dataset_train = MNIST(root="./data", train=True, download=True, transform=composed)
+        dataset_valid = MNIST(root="./data", train=False, download=True, transform=composed)
     else:
         raise NotImplementedError
     return dataset_train, dataset_valid
