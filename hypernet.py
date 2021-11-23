@@ -1,4 +1,3 @@
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -50,6 +49,26 @@ class PWNet(nn.Module):
         res = self.const[left] * (dist) + (1.0 - dist) * self.const[right]
 
         return res
+
+
+class BasicExpertNet(nn.Module):
+    def __init__(self, input_size, output_size):
+        '''
+            Params:
+            input_size: size of an input image (intermediate representation)
+            output_size: number of operations corresponding each edge
+        '''
+        super(BasicExpertNet, self).__init__()
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(input_size * input_size, output_size)
+        )
+
+    def forward(self, img):
+        return self.net(img.mean(dim=1))
+        
+
+        
 
 
 # class PWLinear(nn.Module):

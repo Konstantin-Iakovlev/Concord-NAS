@@ -54,8 +54,8 @@ def get_dataset(cls, cutout_length=0):
         dataset_valid = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
     elif cls == 'MNIST':
         print('The dataset is MNIST')
-        dataset_train = MNIST(root="./data", train=True, download=True, transform=train_transform)
-        dataset_valid = MNIST(root="./data", train=False, download=True, transform=valid_transform)
+        dataset_train = MNIST(root="./data", train=True, download=True, transform=transforms.ToTensor())
+        dataset_valid = MNIST(root="./data", train=False, download=True, transform=transforms.ToTensor())
     else:
         raise NotImplementedError
     return dataset_train, dataset_valid

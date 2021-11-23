@@ -1,6 +1,8 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from hypernet import PWNet
+import logging
+from hypernet import PWNet, BasicExpertNet
 from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
         DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
@@ -18,6 +20,8 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         """
         super(HyperDartsLayerChoice, self).__init__(layer_choice)
         self.pw_net = PWNet(len(self.op_choices), num_kernels)
+        # basic expert net
+        # self.expert_net = BasicExpertNet(28, len(self.op_choices))
         self.sampling_mode = sampling_mode
         assert sampling_mode in ['gumbel-softmax', 'softmax']
         self.t = t
@@ -55,6 +59,7 @@ class HyperDartsInputChoice(DartsInputChoice):
     def __init__(self, input_choice, num_kernels=5, sampling_mode='gumbel-softmax', t=0.2):
         super(HyperDartsInputChoice, self).__init__(input_choice)
         self.pw_net = PWNet(input_choice.n_candidates, num_kernels)
+        # self.expert_net = BasicExpertNet(14, input_choice.n_candidates)
         delattr(self, 'alpha')
         self.alpha = self.pw_net.parameters()
 
@@ -102,6 +107,8 @@ class HyperDartsTrainer(DartsTrainer):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') \
                 if device is None else device
         self.log_frequency = log_frequency
+        self._logger = logging.getLogger('darts')
+
         self.model.to(self.device)
 
         self.nas_modules = []
@@ -117,11 +124,12 @@ class HyperDartsTrainer(DartsTrainer):
         ctrl_params = {}
         for _, m in self.nas_modules:
             if m.name in ctrl_params:
-                assert m.alpha.size() == ctrl_params[m.name].size(), \
+                assert [p.size() for p in m.alpha] == \
+                [p.size() for p in ctrl_params[m.name]], \
                         'Size of parameters with the same label should be same.'
                 m.alpha = ctrl_params[m.name]
             else:
-                ctrl_params[m.name] = m.alpha
+                ctrl_params[m.name] = list(m.alpha)
 
         list_of_params = []
         for params in ctrl_params.values():
@@ -133,15 +141,56 @@ class HyperDartsTrainer(DartsTrainer):
 
         self._init_dataloader()
 
-    def _logits_and_loss(self, X, y):
-        if self.model.training:
-            lam = torch.distributions.Uniform(low=1e-4, high=1e-2).sample()
-        else:
-            lam = torch.tensor(0.0)
+    def _logits_and_loss(self, X, y, lam=torch.tensor(0.0)):
         logits = self.model(X, lam)
         hyperloss = self.model._hyperloss(lam)
         loss = self.loss(logits, y) + hyperloss
         return logits, loss
+
+    
+    def _train_one_epoch(self, epoch):
+        self.model.train()
+        trn_meters = AverageMeterGroup()
+        val_meters= AverageMeterGroup()
+        for step, ((trn_X, trn_y), (val_X, val_y)) in enumerate(zip(self.train_loader, self.valid_loader)):
+            trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
+            val_X, val_y = to_device(val_X, self.device), to_device(val_y, self.device)
+
+            # phase 1. architecture step
+            self.ctrl_optim.zero_grad()
+            if self.unrolled:
+                self._unrolled_backward(trn_X, trn_y, val_X, val_y)
+            else:
+                self._backward(val_X, val_y)
+            self.ctrl_optim.step()
+
+            # phase 2: child network step
+            self.model_optim.zero_grad()
+            # sample lambda
+            lam = torch.tensor(0.0).to(self.device)
+            logits, loss = self._logits_and_loss(trn_X, trn_y, lam)
+            loss.backward()
+            if self.grad_clip > 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)  # gradient clipping
+            self.model_optim.step()
+
+            metrics = self.metrics(logits, trn_y)
+            metrics['loss'] = loss.item()
+            trn_meters.update(metrics)
+            
+            # validate
+            lam = torch.tensor(0.0).to(self.device)
+            with torch.no_grad():
+                logits, loss = self._logits_and_loss(val_X, val_y, lam)
+                metrics = self.metrics(logits, val_y)
+                metrics['loss'] = loss.item()
+                val_meters.update(metrics)
+                
+
+            if self.log_frequency is not None and step % self.log_frequency == 0:
+                self._logger.info('Epoch [%s/%s] Step [%s/%s]\nTrain: %s\nValid: %s',
+                        epoch + 1, self.num_epochs, step + 1,
+                        len(self.train_loader), trn_meters, val_meters)
 
 
 

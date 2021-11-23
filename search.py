@@ -28,9 +28,13 @@ if __name__ == "__main__":
     config = ConfigObj(os.path.join('configs', args.config))
     print(config)
 
-    dataset_train, dataset_valid = datasets.get_dataset("cifar10")
+    dataset_train, dataset_valid = datasets.get_dataset(config['dataset'])
 
-    model = CNN(32, 3, int(config['darts']['channels']), 10, int(config['darts']['layers']),
+    model = CNN(int(config['darts']['input_size']),
+            int(config['darts']['input_channels']),
+            int(config['darts']['channels']),
+            int(config['darts']['n_classes']),
+            int(config['darts']['layers']),
             n_nodes=int(config['darts']['n_nodes']),
             stem_multiplier=int(config['darts']['stem_multiplier']))
     criterion = nn.CrossEntropyLoss()
