@@ -68,6 +68,33 @@ class BasicExpertNet(nn.Module):
         return self.net(img.mean(dim=1))
         
 
+class RBF(nn.Module):
+    def __init__(self, input_size, n_centers, output_size):
+        '''
+            Params:
+            input_size: input size
+            n_centers: number of centers of RBF
+            output_size: output size
+        '''
+        super(RBF, self).__init__()
+        self._bn = nn.BatchNorm1d(input_size)
+        self._centers = nn.Parameter(torch.Tensor(input_size, n_centers))
+        nn.init.normal_(self._centers, 0, 1)
+        self._linear = nn.Linear(n_centers, output_size)
+        self._phi = lambda x: torch.exp(-x ** 2)
+
+    def forward(self, x: torch.tensor):
+        '''
+            Params:
+            x: torch.tensor of shape (batch_size, input_size)
+
+            Retruns:
+            torch.tensor of shape (batch_size, output_size)
+        '''
+        x = self._bn(x)
+        dist_matrix = ((x.unsqueeze(-1) - self._centers.unsqueeze(0)) ** 2).sum(dim=1).squeeze(1)
+        return self._linear(self._phi(dist_matrix)) 
+        
         
 
 

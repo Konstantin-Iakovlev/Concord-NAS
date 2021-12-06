@@ -62,7 +62,7 @@ def get_dataset(cls, cutout_length=0):
         dataset_valid = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
     elif cls == 'MNIST':
         print('The dataset is MNIST')
-        composed = transforms.Compose([transforms.ToTensor(), Flip()])
+        composed = transforms.Compose([transforms.ToTensor()])
         dataset_train = MNIST(root="./data", train=True, download=True, transform=composed)
         dataset_valid = MNIST(root="./data", train=False, download=True, transform=composed)
     else:

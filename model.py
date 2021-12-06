@@ -58,19 +58,18 @@ class Node(nn.Module):
         self.drop_path = ops.DropPath()
         self.input_switch = InputChoice(n_candidates=len(choice_keys), n_chosen=2, label="{}_switch".format(node_id))
 
-    def forward(self, prev_nodes, lam=torch.tensor(0.0)):
+    def forward(self, prev_nodes, batch, lam=torch.tensor(0.0)):
         assert len(self.ops) == len(prev_nodes)
-        # node, lam
-        out = [op(node, lam) for op, node in zip(self.ops, prev_nodes)]
+        out = [op(node, batch, lam) for op, node in zip(self.ops, prev_nodes)]
         out = [self.drop_path(o) if o is not None else None for o in out]
-        return self.input_switch(out)
+        return self.input_switch(out, batch)
 
-    def _hyperloss(self, lam=torch.tensor(0.0)):
+    def _hyperloss(self, batch, lam=torch.tensor(0.0)):
         assert isinstance(self.input_switch, DartsInputChoice)
-        hyperloss = self.input_switch._hyperloss(lam)
+        hyperloss = self.input_switch._hyperloss(batch, lam)
         for op in self.ops:
             assert isinstance(op, DartsLayerChoice)
-            hyperloss += op._hyperloss(lam)
+            hyperloss += op._hyperloss(batch, lam)
         return hyperloss
         
 
@@ -95,19 +94,19 @@ class Cell(nn.Module):
             self.mutable_ops.append(Node("{}_n{}".format("reduce" if reduction else "normal", depth),
                                          depth, channels, 2 if reduction else 0))
 
-    def forward(self, s0, s1, lam=torch.tensor(0.0)):
+    def forward(self, s0, s1, batch, lam=torch.tensor(0.0)):
         # s0, s1 are the outputs of previous previous cell and previous cell, respectively.
         tensors = [self.preproc0(s0), self.preproc1(s1)]
         for node in self.mutable_ops:
             # tensors, lam
-            cur_tensor = node(tensors, lam)
+            cur_tensor = node(tensors, batch, lam)
             tensors.append(cur_tensor)
 
         output = torch.cat(tensors[2:], dim=1)
         return output
 
-    def _hyperloss(self, lam=torch.tensor(0.0)):
-        return sum([node._hyperloss(lam) for node in self.mutable_ops])
+    def _hyperloss(self, batch, lam=torch.tensor(0.0)):
+        return sum([node._hyperloss(batch, lam) for node in self.mutable_ops])
 
 
 class CNN(nn.Module):
@@ -151,13 +150,13 @@ class CNN(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.Linear(channels_p, n_classes)
 
-    def forward(self, x, lam=torch.tensor(0.0)):
+    def forward(self, x, batch, lam=torch.tensor(0.0)):
         s0 = s1 = self.stem(x)
 
         aux_logits = None
         for i, cell in enumerate(self.cells):
             # cell(s0, s1, lam)
-            s0, s1 = s1, cell(s0, s1, lam)
+            s0, s1 = s1, cell(s0, s1, batch, lam)
             if i == self.aux_pos and self.training:
                 aux_logits = self.aux_head(s1)
 
@@ -174,8 +173,8 @@ class CNN(nn.Module):
             if isinstance(module, ops.DropPath):
                 module.p = p
 
-    def _hyperloss(self, lam=torch.tensor(0.0)):
+    def _hyperloss(self, batch, lam=torch.tensor(0.0)):
         for cell in self.cells:
-            return cell._hyperloss(lam)
+            return cell._hyperloss(batch, lam)
 
 

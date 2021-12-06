@@ -43,9 +43,8 @@ if __name__ == "__main__":
             momentum=float(config['darts']['optim']['w_momentum']),
             weight_decay=float(config['darts']['optim']['w_weight_decay']))
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.001)
-    print('Model initializaed')
-
-    trainer = HyperDartsTrainer(model,
+    trainer = HyperDartsTrainer(config['folder_name'],
+                                model,
                                 loss=criterion,
                                 metrics=lambda output, target: accuracy(output, target, topk=(1,)),
                                 optimizer=optim,
@@ -64,6 +63,26 @@ if __name__ == "__main__":
     print('Trainer initialized')
     print('---' * 20)
     trainer.fit()
-    final_architecture = trainer.export()
-    print('Final architecture:', trainer.export())
-    json.dump(trainer.export(), open('checkpoint.json', 'w'))
+    # export architecture
+    dl = torch.utils.data.DataLoader(dataset_valid, batch_size=64)
+    for i, (x, _) in enumerate(dl):
+        x = torch.stack([torch.pca_lowrank(x[i].squeeze(), 2)[0] for i in range(64)])
+        x = x.view(64, -1)
+        final_architecture = trainer.export(x)
+        print('Final architecture, regular:', final_architecture)
+        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
+            config['folder_name'], f'checkpoint_regular_{i}.json'), 'w'))
+        if i >= 4:
+            break
+    
+    for i, (x, _) in enumerate(dl):
+        x = x.transpose(-1, -2)
+        x = torch.stack([torch.pca_lowrank(x[i].squeeze(), 2)[0] for i in range(64)])
+        x = x.view(64, -1)
+        final_architecture = trainer.export(x)
+        print('Final architecture, transposed:', final_architecture)
+        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
+            config['folder_name'], f'checkpoint_transposed_{i}.json'), 'w'))
+        if i >= 4:
+            break
+
