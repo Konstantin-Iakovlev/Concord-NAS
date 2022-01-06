@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 import os
 import logging
-from hypernet import PWNet, RBF
+from hypernet import PWNet, RBF, BasicExpertNet
 from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
         DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
@@ -12,17 +12,17 @@ from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
 
 
 class HyperDartsLayerChoice(DartsLayerChoice):
-    def __init__(self, layer_choice, num_kernels=5, 
+    def __init__(self, layer_choice, input_size=32*2*3, 
             sampling_mode='gumbel-softmax', t=0.2, *args, **kwargs):
         """
         Params:
-            num_kernels: int, number of kernels in PWNet
+            input_size: int, input size of BasicExpertNet
             sampling_mode: str, sampling mode
             t: float, temperature
         """
         super(HyperDartsLayerChoice, self).__init__(layer_choice)
-        # self.pw_net = PWNet(len(self.op_choices), num_kernels)
-        self.rbf_net = RBF(2 * 28, 10, len(self.op_choices))
+        # self.rbf_net = RBF(2 * 28, 10, len(self.op_choices))
+        self.rbf_net = BasicExpertNet(input_size, len(self.op_choices))
         self.sampling_mode = sampling_mode
         assert sampling_mode in ['gumbel-softmax', 'softmax']
         self.t = t
@@ -64,10 +64,9 @@ class HyperDartsLayerChoice(DartsLayerChoice):
 
 
 class HyperDartsInputChoice(DartsInputChoice):
-    def __init__(self, input_choice, num_kernels=5, sampling_mode='gumbel-softmax', t=0.2):
+    def __init__(self, input_choice, input_size=32*2*3, sampling_mode='gumbel-softmax', t=0.2):
         super(HyperDartsInputChoice, self).__init__(input_choice)
-        # self.pw_net = PWNet(input_choice.n_candidates, num_kernels)
-        self.rbf_net = RBF(2 * 28, 20, input_choice.n_candidates)
+        self.rbf_net = BasicExpertNet(input_size, input_choice.n_candidates)
         delattr(self, 'alpha')
         self.alpha = self.rbf_net.parameters()
 
@@ -98,7 +97,7 @@ class HyperDartsInputChoice(DartsInputChoice):
 class HyperDartsTrainer(DartsTrainer):
     def __init__(self, folder_name, model, loss, metrics, optimizer,
                  num_epochs, dataset, grad_clip=5.,
-                 batch_size=64, workers=4,
+                 batch_size=64, workers=2,
                  device=None, log_frequency=None,
                  arc_learning_rate=3.0E-4, betas=(0.5, 0.999),
                  arc_weight_decay=1e-3, unrolled=False,
@@ -124,10 +123,13 @@ class HyperDartsTrainer(DartsTrainer):
         self.model.to(self.device)
 
         self.nas_modules = []
+        input_size=32 * 3 * 2
         replace_layer_choice(self.model, lambda lay_choice: HyperDartsLayerChoice(
-            lay_choice, sampling_mode=sampling_mode, t=t), self.nas_modules)
+            lay_choice, sampling_mode=sampling_mode, t=t, input_size=input_size),
+            self.nas_modules)
         replace_input_choice(self.model, lambda lay_choice: HyperDartsInputChoice(
-            lay_choice,sampling_mode=sampling_mode, t=t), self.nas_modules)
+            lay_choice,sampling_mode=sampling_mode, t=t, input_size=input_size),
+            self.nas_modules)
         for _, module in self.nas_modules:
             module.to(self.device)
 
@@ -153,14 +155,14 @@ class HyperDartsTrainer(DartsTrainer):
 
         self._init_dataloader()
 
-    def _logits_and_loss(self, X, y, lam=torch.tensor(0.0)):
+    def _logits_and_loss(self, X, y):
         # perform PCA
-        batch = torch.stack([torch.pca_lowrank(picture, 2)[0] for picture in X])
-        batch = batch.view(batch.shape[0], -1)
+        batch = torch.pca_lowrank(X, 2)[0].reshape(X.shape[0], -1)
 
-        logits = self.model(X, batch, lam)
-        hyperloss = self.model._hyperloss(batch, lam.to(self.device))
-        loss = self.loss(logits, y) + hyperloss
+        logits = self.model(X, batch, self.sampled_lambda)
+        # now hyperloss is always zero, we do not need it
+        # hyperloss = self.model._hyperloss(batch, self.sampled_lambda)
+        loss = self.loss(logits, y) # + hyperloss
         return logits, loss
 
     
@@ -172,10 +174,15 @@ class HyperDartsTrainer(DartsTrainer):
             trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
             val_X, val_y = to_device(val_X, self.device), to_device(val_y, self.device)
             
-            # perform a flip
+            # perform a flip: 0 is regular, 1 is transposed
+            self.batch = 0
             if step % 2 == 0:
                 trn_X = trn_X.transpose(-1, -2)
                 val_X = val_X.transpose(-1, -2)
+                self.batch = 1
+            # sample lambda
+            lam = torch.tensor(0.0).to(self.device)
+            self.sampled_lambda = lam
 
             # phase 1. architecture step
             self.ctrl_optim.zero_grad()
@@ -187,9 +194,7 @@ class HyperDartsTrainer(DartsTrainer):
 
             # phase 2: child network step
             self.model_optim.zero_grad()
-            # sample lambda
-            lam = torch.tensor(0.0).to(self.device)
-            logits, loss = self._logits_and_loss(trn_X, trn_y, lam)
+            logits, loss = self._logits_and_loss(trn_X, trn_y)
             self.writer.add_scalar('Loss/train', loss.item(), self._step_num)
             loss.backward()
             if self.grad_clip > 0:
@@ -201,9 +206,9 @@ class HyperDartsTrainer(DartsTrainer):
             trn_meters.update(metrics)
             
             # validate
-            lam = torch.tensor(0.0).to(self.device)
+            self.sampled_lambda = torch.tensor(0.0).to(self.device)
             with torch.no_grad():
-                logits, loss = self._logits_and_loss(val_X, val_y, lam)
+                logits, loss = self._logits_and_loss(val_X, val_y)
                 self.writer.add_scalar('Loss/val', loss.item(), self._step_num)
                 metrics = self.metrics(logits, val_y)
                 metrics['loss'] = loss.item()
@@ -219,7 +224,7 @@ class HyperDartsTrainer(DartsTrainer):
 
     @torch.no_grad()
     def export(self, batch):
-        to_device(batch, self.device)
+        batch = to_device(batch, self.device)
         result = dict()
         for name, module in self.nas_modules:
             if name not in result:

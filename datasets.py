@@ -4,7 +4,7 @@
 import numpy as np
 import torch
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST
+from torchvision.datasets import CIFAR10, MNIST, SVHN
 
 
 class Cutout(object):
@@ -65,6 +65,10 @@ def get_dataset(cls, cutout_length=0):
         composed = transforms.Compose([transforms.ToTensor()])
         dataset_train = MNIST(root="./data", train=True, download=True, transform=composed)
         dataset_valid = MNIST(root="./data", train=False, download=True, transform=composed)
+    elif cls == 'SVHN':
+        print('dataset is SVHN')
+        dataset_train = SVHN(root="./data", split='train', download=True, transform=train_transform)
+        dataset_valid = SVHN(root="./data", split='test', download=True, transform=valid_transform)
     else:
         raise NotImplementedError
     return dataset_train, dataset_valid

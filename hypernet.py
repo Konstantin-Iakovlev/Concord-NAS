@@ -55,17 +55,23 @@ class BasicExpertNet(nn.Module):
     def __init__(self, input_size, output_size):
         '''
             Params:
-            input_size: size of an input image (intermediate representation)
-            output_size: number of operations corresponding each edge
+            input_size: input size
+            output_size: output size
         '''
         super(BasicExpertNet, self).__init__()
-        self.net = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(input_size * input_size, output_size)
+        self._net = nn.Sequential(
+            nn.BatchNorm1d(input_size),
+            nn.Linear(input_size, input_size),
+            nn.ReLU(),
+            nn.Linear(input_size, output_size)
         )
 
-    def forward(self, img):
-        return self.net(img.mean(dim=1))
+    def forward(self, x):
+        '''
+            Params:
+            x: tensor of shape (batch_size, input_size)
+        '''
+        return self._net(x)
         
 
 class RBF(nn.Module):
@@ -94,46 +100,4 @@ class RBF(nn.Module):
         x = self._bn(x)
         dist_matrix = ((x.unsqueeze(-1) - self._centers.unsqueeze(0)) ** 2).sum(dim=1).squeeze(1)
         return self._linear(self._phi(dist_matrix)) 
-        
-        
 
-
-# class PWLinear(nn.Module):
-#     def __init__(self, size, kernel_num):
-#         nn.Module.__init__(self)
-#         self.weight = PWNet(size, kernel_num)
-#         self.bias = PWNet(size[1], kernel_num)
-#
-#     def forward(self, x, lam):
-#         weight = self.weight(lam).float()
-#         bias = self.bias(lam).float()
-#         res = torch.matmul(x, weight) + bias
-#         return res
-#
-#
-# class HyperNet(nn.Module):
-#     """
-#     гиперсеть, управляющая нашей структурой
-#     """
-#
-#     def __init__(self, hidden_layer_num, hidden_size, out_size, kernel_num):
-#         """
-#         :param hidden_layer_num: количество скрытых слоев (может быть нулевым)
-#         :param hidden_size: количество нейронов на скрытом слое (актуально, если скрытые слои есть)
-#         """
-#         nn.Module.__init__(self)
-#         self.out_size = out_size
-#         layers = []
-#         in_ = 1  # исходная входная размерность
-#         for l in range(hidden_layer_num):
-#             layers.append(PWNet((in_, hidden_size), kernel_num))
-#             layers.append(nn.ReLU())
-#             in_ = hidden_size
-#         layers.append(PWNet((in_, out_size), kernel_num))
-#         # layers.append(nn.Linear(in_, out_size))
-#         self.model = nn.Sequential(*layers)
-#
-#     def forward(self, x):
-#         # x --- одномерный вектор (задающий сложность)
-#         res = self.model(x).view(1, self.out_size).float()
-#         return res
