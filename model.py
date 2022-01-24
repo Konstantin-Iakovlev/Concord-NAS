@@ -71,6 +71,16 @@ class Node(nn.Module):
             assert isinstance(op, DartsLayerChoice)
             hyperloss += op._hyperloss(batch, lam)
         return hyperloss
+
+
+    def _concord_loss(self):
+        assert isinstance(self.input_switch, DartsInputChoice)
+        concord_loss = self.input_switch._concord_loss()
+        for op in self.ops:
+            assert isinstance(op, DartsLayerChoice)
+            concord_loss += op._concord_loss()
+        return concord_loss
+
         
 
 class Cell(nn.Module):
@@ -108,11 +118,14 @@ class Cell(nn.Module):
     def _hyperloss(self, batch, lam=torch.tensor(0.0)):
         return sum([node._hyperloss(batch, lam) for node in self.mutable_ops])
 
+    def _concord_loss(self):
+        return sum([node._concord_loss() for node in self.mutable_ops])
+
 
 class CNN(nn.Module):
 
-    def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_nodes=4,
-                 stem_multiplier=3, auxiliary=False):
+    def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
+            n_nodes=4, stem_multiplier=3, auxiliary=False):
         super().__init__()
         self.in_channels = in_channels
         self.channels = channels
@@ -145,7 +158,9 @@ class CNN(nn.Module):
             channels_pp, channels_p = channels_p, c_cur_out
 
             if i == self.aux_pos:
-                self.aux_head = AuxiliaryHead(input_size // 4, channels_p, n_classes)
+                self.aux_head = nn.ModuleList([AuxiliaryHead(input_size // 4,
+                    channels_p, n_classes)] for _ in range(n_heads))
+                # self.aux_head = AuxiliaryHead(input_size // 4, channels_p, n_classes)
 
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.Linear(channels_p, n_classes)
@@ -158,7 +173,7 @@ class CNN(nn.Module):
             # cell(s0, s1, lam)
             s0, s1 = s1, cell(s0, s1, batch, lam)
             if i == self.aux_pos and self.training:
-                aux_logits = self.aux_head(s1)
+                aux_logits = self.aux_head[batch](s1)
 
         out = self.gap(s1)
         out = out.view(out.size(0), -1)  # flatten
@@ -177,4 +192,8 @@ class CNN(nn.Module):
         for cell in self.cells:
             return cell._hyperloss(batch, lam)
 
+
+    def _concord_loss(self):
+        for cell in self.cells:
+            return cell._concord_loss()
 

@@ -26,15 +26,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = ConfigObj(os.path.join('configs', args.config))
-    print(config)
+    # print(config)
+    # print(config['datasets'].split(';'))
 
-    dataset_train, dataset_valid = datasets.get_dataset(config['dataset'])
+    datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
+            int(config['darts']['input_size']), int(config['darts']['input_channels']))
+    # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
 
     model = CNN(int(config['darts']['input_size']),
             int(config['darts']['input_channels']),
             int(config['darts']['channels']),
             int(config['darts']['n_classes']),
             int(config['darts']['layers']),
+            n_heads=len(datasets_train),
             n_nodes=int(config['darts']['n_nodes']),
             stem_multiplier=int(config['darts']['stem_multiplier']))
     criterion = nn.CrossEntropyLoss()
@@ -49,7 +53,8 @@ if __name__ == "__main__":
                                 metrics=lambda output, target: accuracy(output, target, topk=(1,)),
                                 optimizer=optim,
                                 num_epochs=int(config['epochs']),
-                                dataset=dataset_train,
+                                datasets=datasets_train,
+                                concord_coeff=float(config['darts']['concord_coeff']),
                                 batch_size=int(config['batch_size']),
                                 log_frequency=int(config['log_frequency']),
                                 arc_learning_rate=float(config['darts']['optim']['alpha_lr']),
@@ -64,25 +69,12 @@ if __name__ == "__main__":
     print('---' * 20)
     trainer.fit()
     # export architecture
-    dl = torch.utils.data.DataLoader(dataset_valid, batch_size=64)
-    for i, (x, _) in enumerate(dl):
-        x = torch.stack([torch.pca_lowrank(x[i].squeeze(), 2)[0] for i in range(64)])
-        x = x.view(64, -1)
-        final_architecture = trainer.export(x)
-        print('Final architecture, regular:', final_architecture)
-        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
-            config['folder_name'], f'checkpoint_regular_{i}.json'), 'w'))
-        if i >= 4:
-            break
-    
-    for i, (x, _) in enumerate(dl):
-        x = x.transpose(-1, -2)
-        x = torch.stack([torch.pca_lowrank(x[i].squeeze(), 2)[0] for i in range(64)])
-        x = x.view(64, -1)
-        final_architecture = trainer.export(x)
-        print('Final architecture, transposed:', final_architecture)
-        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
-            config['folder_name'], f'checkpoint_transposed_{i}.json'), 'w'))
-        if i >= 4:
-            break
+    final_architecture_1 = trainer.export(0)
+    print('final_architecture_1\n', final_architecture_1)
+    final_architecture_2 = trainer.export(1)
+    print('final_architecture_2\n', final_architecture_2)
+    json.dump(final_architecture_1, open(os.path.join('.', 'searchs', 
+        config['folder_name'], f'final_architecture_1.json'), 'w'))
+    json.dump(final_architecture_2, open(os.path.join('.', 'searchs', 
+        config['folder_name'], f'final_architecture_2.json'), 'w'))
 
