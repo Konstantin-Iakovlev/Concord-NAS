@@ -43,7 +43,7 @@ class HyperDartsLayerChoice(DartsLayerChoice):
             batch: PCA representation (domain is unknown) or index of domain 
             lam: regularization coefficient
         '''
-        op_results = torch.stack([op(inputs) for op in self.op_choices.values()])
+        op_results = torch.stack([op(inputs, domain_idx=batch) for op in self.op_choices.values()])
         # rbf_outputs = self.rbf_net(batch)
         rbf_outputs = self.alpha[batch].unsqueeze(0)
         if self.sampling_mode == 'gumbel-softmax':
@@ -276,7 +276,7 @@ class HyperDartsTrainer(DartsTrainer):
                     metrics['loss'] = loss.item() / self.p[domain_idx]
                     val_meters.update(metrics)
                     # update p[domain_idx]
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.1)
+                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.01)
                     
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:

@@ -27,12 +27,23 @@ class DropPath(nn.Module):
 
         return x
 
+class Identity(nn.Module):
+    """
+    Identity operation
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, domain_idx=0):
+        return x
+
 
 class PoolBN(nn.Module):
     """
     AvgPool or MaxPool with BN. `pool_type` must be `max` or `avg`.
     """
-    def __init__(self, pool_type, C, kernel_size, stride, padding, affine=True):
+    def __init__(self, pool_type, C, kernel_size, stride, padding, affine=True,
+            num_domains=1):
         super().__init__()
         if pool_type.lower() == 'max':
             self.pool = nn.MaxPool2d(kernel_size, stride, padding)
@@ -41,11 +52,11 @@ class PoolBN(nn.Module):
         else:
             raise ValueError()
 
-        self.bn = nn.BatchNorm2d(C, affine=affine)
+        self.bn = nn.ModuleList([nn.BatchNorm2d(C, affine=affine) for _ in range(num_domains)])
 
-    def forward(self, x):
+    def forward(self, x, domain_idx=0):
         out = self.pool(x)
-        out = self.bn(out)
+        out = self.bn[domain_idx](out)
         return out
 
 
@@ -53,33 +64,35 @@ class StdConv(nn.Module):
     """
     Standard conv: ReLU - Conv - BN
     """
-    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True,
+            num_domains=1):
         super().__init__()
         self.net = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(C_in, C_out, kernel_size, stride, padding, bias=False),
-            nn.BatchNorm2d(C_out, affine=affine)
         )
+        self.bn = nn.ModuleList([nn.BatchNorm2d(C_out, affine=affine) for _ in range(num_domains)])
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, domain_idx=0):
+        return self.bn[domain_idx](self.net(x))
 
 
 class FacConv(nn.Module):
     """
     Factorized conv: ReLU - Conv(Kx1) - Conv(1xK) - BN
     """
-    def __init__(self, C_in, C_out, kernel_length, stride, padding, affine=True):
+    def __init__(self, C_in, C_out, kernel_length, stride, padding, affine=True,
+            num_domains=1):
         super().__init__()
         self.net = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(C_in, C_in, (kernel_length, 1), stride, padding, bias=False),
             nn.Conv2d(C_in, C_out, (1, kernel_length), stride, padding, bias=False),
-            nn.BatchNorm2d(C_out, affine=affine)
         )
+        self.bn = nn.ModuleList([nn.BatchNorm2d(C_out, affine=affine) for _ in range(num_domains)])
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, domain_idx=0):
+        return self.bn[domain_idx](self.net(x))
 
 
 class DilConv(nn.Module):
@@ -88,18 +101,19 @@ class DilConv(nn.Module):
     ReLU - (Dilated) depthwise separable - Pointwise - BN.
     If dilation == 2, 3x3 conv => 5x5 receptive field, 5x5 conv => 9x9 receptive field.
     """
-    def __init__(self, C_in, C_out, kernel_size, stride, padding, dilation, affine=True):
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, dilation, affine=True,
+            num_domains=1):
         super().__init__()
         self.net = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(C_in, C_in, kernel_size, stride, padding, dilation=dilation, groups=C_in,
                       bias=False),
             nn.Conv2d(C_in, C_out, 1, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(C_out, affine=affine)
         )
+        self.bn = nn.ModuleList([nn.BatchNorm2d(C_out, affine=affine) for _ in range(num_domains)])
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, domain_idx=0):
+        return self.bn[domain_idx](self.net(x))
 
 
 class SepConv(nn.Module):
@@ -107,30 +121,31 @@ class SepConv(nn.Module):
     Depthwise separable conv.
     DilConv(dilation=1) * 2.
     """
-    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True):
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine=True,
+            num_domains=1):
         super().__init__()
-        self.net = nn.Sequential(
-            DilConv(C_in, C_in, kernel_size, stride, padding, dilation=1, affine=affine),
-            DilConv(C_in, C_out, kernel_size, 1, padding, dilation=1, affine=affine)
-        )
+        self.conv_1 = DilConv(C_in, C_in, kernel_size, stride, padding, dilation=1, affine=affine,
+            num_domains=num_domains)
+        self.conv_2 = DilConv(C_in, C_out, kernel_size, 1, padding, dilation=1, affine=affine,
+            num_domains=num_domains)
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, domain_idx=0):
+        return self.conv_2(self.conv_1(x, domain_idx=domain_idx), domain_idx=domain_idx)
 
 
 class FactorizedReduce(nn.Module):
     """
     Reduce feature map size by factorized pointwise (stride=2).
     """
-    def __init__(self, C_in, C_out, affine=True):
+    def __init__(self, C_in, C_out, affine=True, num_domains=1):
         super().__init__()
         self.relu = nn.ReLU()
         self.conv1 = nn.Conv2d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
         self.conv2 = nn.Conv2d(C_in, C_out // 2, 1, stride=2, padding=0, bias=False)
-        self.bn = nn.BatchNorm2d(C_out, affine=affine)
+        self.bn = nn.ModuleList([nn.BatchNorm2d(C_out, affine=affine) for _ in range(num_domains)])
 
-    def forward(self, x):
+    def forward(self, x, domain_idx=0):
         x = self.relu(x)
         out = torch.cat([self.conv1(x), self.conv2(x[:, :, 1:, 1:])], dim=1)
-        out = self.bn(out)
+        out = self.bn[domain_idx](out)
         return out

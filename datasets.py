@@ -46,8 +46,12 @@ class Broadcast(object):
 
 
 def get_dataset(cls, input_size, channels, cutout_length=0):
-    MEAN = [0.49139968, 0.48215827, 0.44653124]
-    STD = [0.24703233, 0.24348505, 0.26158768]
+    if channels == 1:
+        MEAN = [0.5]
+        STD = [0.25]
+    else:
+        MEAN = [0.49139968, 0.48215827, 0.44653124]
+        STD = [0.24703233, 0.24348505, 0.26158768]
     normalize = [
         transforms.Normalize(MEAN, STD)
     ]

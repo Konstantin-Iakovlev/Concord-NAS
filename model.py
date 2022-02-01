@@ -38,7 +38,8 @@ class AuxiliaryHead(nn.Module):
 
 
 class Node(nn.Module):
-    def __init__(self, node_id, num_prev_nodes, channels, num_downsample_connect):
+    def __init__(self, node_id, num_prev_nodes, channels, num_downsample_connect,
+            num_domains):
         super().__init__()
         self.ops = nn.ModuleList()
         choice_keys = []
@@ -47,13 +48,14 @@ class Node(nn.Module):
             choice_keys.append("{}_p{}".format(node_id, i))
             self.ops.append(
                 LayerChoice(OrderedDict([
-                    ("maxpool", ops.PoolBN('max', channels, 3, stride, 1, affine=False)),
-                    ("avgpool", ops.PoolBN('avg', channels, 3, stride, 1, affine=False)),
-                    ("skipconnect", nn.Identity() if stride == 1 else ops.FactorizedReduce(channels, channels, affine=False)),
-                    ("sepconv3x3", ops.SepConv(channels, channels, 3, stride, 1, affine=False)),
-                    ("sepconv5x5", ops.SepConv(channels, channels, 5, stride, 2, affine=False)),
-                    ("dilconv3x3", ops.DilConv(channels, channels, 3, stride, 2, 2, affine=False)),
-                    ("dilconv5x5", ops.DilConv(channels, channels, 5, stride, 4, 2, affine=False))
+                    ("maxpool", ops.PoolBN('max', channels, 3, stride, 1, affine=False, num_domains=num_domains)),
+                    ("avgpool", ops.PoolBN('avg', channels, 3, stride, 1, affine=False, num_domains=num_domains)),
+                    ("skipconnect", ops.Identity() if stride == 1 else ops.FactorizedReduce(channels,\
+                            channels, affine=False, num_domains=num_domains)),
+                    ("sepconv3x3", ops.SepConv(channels, channels, 3, stride, 1, affine=False, num_domains=num_domains)),
+                    ("sepconv5x5", ops.SepConv(channels, channels, 5, stride, 2, affine=False, num_domains=num_domains)),
+                    ("dilconv3x3", ops.DilConv(channels, channels, 3, stride, 2, 2, affine=False, num_domains=num_domains)),
+                    ("dilconv5x5", ops.DilConv(channels, channels, 5, stride, 4, 2, affine=False, num_domains=num_domains))
                 ]), label=choice_keys[-1]))
         self.drop_path = ops.DropPath()
         self.input_switch = InputChoice(n_candidates=len(choice_keys), n_chosen=2, label="{}_switch".format(node_id))
@@ -85,7 +87,8 @@ class Node(nn.Module):
 
 class Cell(nn.Module):
 
-    def __init__(self, n_nodes, channels_pp, channels_p, channels, reduction_p, reduction):
+    def __init__(self, n_nodes, channels_pp, channels_p, channels, reduction_p, reduction,
+            num_domains):
         super().__init__()
         self.reduction = reduction
         self.n_nodes = n_nodes
@@ -93,16 +96,19 @@ class Cell(nn.Module):
         # If previous cell is reduction cell, current input size does not match with
         # output size of cell[k-2]. So the output[k-2] should be reduced by preprocessing.
         if reduction_p:
-            self.preproc0 = ops.FactorizedReduce(channels_pp, channels, affine=False)
+            self.preproc0 = ops.FactorizedReduce(channels_pp, channels, affine=False,\
+                    num_domains=num_domains)
         else:
-            self.preproc0 = ops.StdConv(channels_pp, channels, 1, 1, 0, affine=False)
-        self.preproc1 = ops.StdConv(channels_p, channels, 1, 1, 0, affine=False)
+            self.preproc0 = ops.StdConv(channels_pp, channels, 1, 1, 0, affine=False,\
+                    num_domains=num_domains)
+        self.preproc1 = ops.StdConv(channels_p, channels, 1, 1, 0, affine=False,\
+                num_domains=num_domains)
 
         # generate dag
         self.mutable_ops = nn.ModuleList()
         for depth in range(2, self.n_nodes + 2):
             self.mutable_ops.append(Node("{}_n{}".format("reduce" if reduction else "normal", depth),
-                                         depth, channels, 2 if reduction else 0))
+                                         depth, channels, 2 if reduction else 0, num_domains))
 
     def forward(self, s0, s1, batch, lam=torch.tensor(0.0)):
         # s0, s1 are the outputs of previous previous cell and previous cell, respectively.
@@ -152,7 +158,7 @@ class CNN(nn.Module):
                 c_cur *= 2
                 reduction = True
 
-            cell = Cell(n_nodes, channels_pp, channels_p, c_cur, reduction_p, reduction)
+            cell = Cell(n_nodes, channels_pp, channels_p, c_cur, reduction_p, reduction, n_heads)
             self.cells.append(cell)
             c_cur_out = c_cur * n_nodes
             channels_pp, channels_p = channels_p, c_cur_out
@@ -163,7 +169,7 @@ class CNN(nn.Module):
                 # self.aux_head = AuxiliaryHead(input_size // 4, channels_p, n_classes)
 
         self.gap = nn.AdaptiveAvgPool2d(1)
-        self.linear = nn.Linear(channels_p, n_classes)
+        self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
 
     def forward(self, x, batch, lam=torch.tensor(0.0)):
         s0 = s1 = self.stem(x)
@@ -177,7 +183,7 @@ class CNN(nn.Module):
 
         out = self.gap(s1)
         out = out.view(out.size(0), -1)  # flatten
-        logits = self.linear(out)
+        logits = self.linear[batch](out)
 
         if aux_logits is not None:
             return logits, aux_logits
