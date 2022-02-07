@@ -46,14 +46,16 @@ if __name__ == "__main__":
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
             momentum=float(config['darts']['optim']['w_momentum']),
             weight_decay=float(config['darts']['optim']['w_weight_decay']))
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.001)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.025)
     trainer = HyperDartsTrainer(config['folder_name'],
                                 model,
                                 loss=criterion,
                                 metrics=lambda output, target: accuracy(output, target, topk=(1,)),
                                 optimizer=optim,
+                                lr_scheduler=lr_scheduler,
                                 num_epochs=int(config['epochs']),
                                 datasets=datasets_train,
+                                seed=int(config['seed']),
                                 concord_coeff=float(config['darts']['concord_coeff']),
                                 batch_size=int(config['batch_size']),
                                 log_frequency=int(config['log_frequency']),

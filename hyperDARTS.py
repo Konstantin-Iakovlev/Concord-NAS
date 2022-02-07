@@ -9,6 +9,7 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
         DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
         replace_layer_choice, replace_input_choice, to_device
+from utils import has_checkpoint, save_checkpoint, load_checkpoint
 
 
 class HyperDartsLayerChoice(DartsLayerChoice):
@@ -45,15 +46,14 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         '''
         op_results = torch.stack([op(inputs, domain_idx=batch) for op in self.op_choices.values()])
         # rbf_outputs = self.rbf_net(batch)
-        rbf_outputs = self.alpha[batch].unsqueeze(0)
+        rbf_outputs = self.alpha[batch]
         if self.sampling_mode == 'gumbel-softmax':
             weights = torch.distributions.RelaxedOneHotCategorical(
                 self.t, logits=rbf_outputs
             ).sample()
         if self.sampling_mode == 'softmax':
             weights = F.softmax(rbf_outputs / self.t, dim=-1)
-        weights = weights.transpose(0, 1)
-        alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 2)
+        alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 1)
         return torch.sum(op_results * weights.view(*alpha_shape), 0)
 
     def _hyperloss(self, batch, lam=torch.tensor(0.0)):
@@ -100,8 +100,8 @@ class HyperDartsInputChoice(DartsInputChoice):
         inputs = torch.stack(inputs)
         # rbf_outputs = self.rbf_net(batch)
         # batch has int type
-        rbf_outputs = self.alpha[batch].unsqueeze(0)
-        alpha_shape = list(rbf_outputs.shape)[::-1] + [1] * (len(inputs.size()) - 2)
+        rbf_outputs = self.alpha[batch]
+        alpha_shape = list(rbf_outputs.shape) + [1] * (len(inputs.size()) - 1)
         if self.sampling_mode == 'softmax':
             return torch.sum(inputs * F.softmax(rbf_outputs / self.t, -1).view(*alpha_shape), 0)
         if self.sampling_mode == 'gumbel-softmax':
@@ -132,8 +132,8 @@ class HyperDartsInputChoice(DartsInputChoice):
 
 
 class HyperDartsTrainer(DartsTrainer):
-    def __init__(self, folder_name, model, loss, metrics, optimizer,
-                 num_epochs, datasets, concord_coeff=0.0, grad_clip=5.,
+    def __init__(self, folder_name, model, loss, metrics, optimizer, lr_scheduler,
+                 num_epochs, datasets, seed=0, concord_coeff=0.0, grad_clip=5.,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
                  arc_learning_rate=3.0E-4, betas=(0.5, 0.999),
@@ -152,8 +152,10 @@ class HyperDartsTrainer(DartsTrainer):
                 if device is None else device
         self.concord_coeff = torch.tensor(concord_coeff).to(self.device)
         self.log_frequency = log_frequency
-        logging.basicConfig(filename=os.path.join('.', 'searchs', folder_name, 
-            folder_name + '.log'))
+        logging.basicConfig(filename=os.path.join('searchs', folder_name, 
+            folder_name + '.log'), level=logging.INFO)
+        self._ckpt_dir = os.path.join('searchs', folder_name)
+        self._seed = seed
         self._logger = logging.getLogger('darts')
         self.writer = SummaryWriter(os.path.join('.', 'searchs', folder_name))
         self._step_num = 0
@@ -173,6 +175,7 @@ class HyperDartsTrainer(DartsTrainer):
             module.to(self.device)
 
         self.model_optim = optimizer
+        self.lr_scheduler = lr_scheduler
         # use the same architecture weight for modules with duplicated names
         ctrl_params = {}
         for _, m in self.nas_modules:
@@ -226,9 +229,16 @@ class HyperDartsTrainer(DartsTrainer):
 
     
     def _train_one_epoch(self, epoch):
+        if has_checkpoint(self._ckpt_dir, epoch):
+            return
         self.model.train()
         trn_meters = AverageMeterGroup()
         val_meters= AverageMeterGroup()
+        seed = self._seed + epoch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        if epoch > 0:
+            load_checkpoint(self._ckpt_dir, epoch - 1, self.model)
         for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):
             for domain_idx in range(len(self.datasets)):
                 trn_X, trn_y = train_objects[domain_idx]
@@ -280,13 +290,16 @@ class HyperDartsTrainer(DartsTrainer):
                     
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
-                    self._logger.info('Epoch [%s/%s] Step [%s/%s], Domain: %s\nTrain: %s\nValid: %s',
+                    self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
                             epoch + 1, self.num_epochs, step + 1,
                             min([len(loader) for loader in self.train_loaders]),
-                            domain_idx, trn_meters, val_meters)
+                            seed, domain_idx, trn_meters, val_meters)
             self.p /= self.p.sum()
             self.writer.add_scalar(f'P[0]', self.p[0].item(), self._step_num)
             self._step_num += 1
+
+        self.lr_scheduler.step()
+        save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict())
 
 
     @torch.no_grad()

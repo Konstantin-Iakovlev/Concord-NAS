@@ -142,8 +142,8 @@ class CNN(nn.Module):
         c_cur = stem_multiplier * self.channels
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, c_cur, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(c_cur)
         )
+        self.stem_bn = nn.ModuleList([nn.BatchNorm2d(c_cur) for _ in range(n_heads)])
 
         # for the first cell, stem is used for both s0 and s1
         # [!] channels_pp and channels_p is output channel size, but c_cur is input channel size.
@@ -172,7 +172,7 @@ class CNN(nn.Module):
         self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
 
     def forward(self, x, batch, lam=torch.tensor(0.0)):
-        s0 = s1 = self.stem(x)
+        s0 = s1 = self.stem_bn[batch](self.stem(x))
 
         aux_logits = None
         for i, cell in enumerate(self.cells):
