@@ -9,28 +9,24 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
         DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup,\
         replace_layer_choice, replace_input_choice, to_device
-from utils import has_checkpoint, save_checkpoint, load_checkpoint
+from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence
 
 
 class HyperDartsLayerChoice(DartsLayerChoice):
-    def __init__(self, layer_choice, input_size=32*2*3, 
+    def __init__(self, layer_choice, num_domains=1,
             sampling_mode='gumbel-softmax', t=0.2, *args, **kwargs):
         """
         Params:
-            input_size: int, input size of BasicExpertNet
             sampling_mode: str, sampling mode
             t: float, temperature
         """
         super(HyperDartsLayerChoice, self).__init__(layer_choice)
-        # self.rbf_net = RBF(2 * 28, 10, len(self.op_choices))
-        self.rbf_net = BasicExpertNet(input_size, len(self.op_choices))
         self.sampling_mode = sampling_mode
         assert sampling_mode in ['gumbel-softmax', 'softmax']
         self.t = t
         delattr(self, 'alpha')
         self.alpha = nn.ParameterList([nn.Parameter(torch.randn(len(self.op_choices)) * 1e-3)
-            for _ in range(2)])
-        # self.alpha = self.rbf_net.parameters()
+            for _ in range(num_domains)])
         self.op_param_num = []
         for op in self.op_choices.values():
             self.op_param_num.append(sum([torch.prod(torch.tensor(p.size())).item() \
@@ -45,48 +41,43 @@ class HyperDartsLayerChoice(DartsLayerChoice):
             lam: regularization coefficient
         '''
         op_results = torch.stack([op(inputs, domain_idx=batch) for op in self.op_choices.values()])
-        # rbf_outputs = self.rbf_net(batch)
         rbf_outputs = self.alpha[batch]
         if self.sampling_mode == 'gumbel-softmax':
             weights = torch.distributions.RelaxedOneHotCategorical(
                 self.t, logits=rbf_outputs
             ).sample()
-        if self.sampling_mode == 'softmax':
+        elif self.sampling_mode == 'softmax':
             weights = F.softmax(rbf_outputs / self.t, dim=-1)
         alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 1)
         return torch.sum(op_results * weights.view(*alpha_shape), 0)
 
     def _hyperloss(self, batch, lam=torch.tensor(0.0)):
-        # rbf_outputs = self.rbf_net(batch)
         rbf_outputs = self.alpha[batch]
         weights = F.softmax(rbf_outputs, dim=-1)
         return lam * (weights @ self.op_param_num.float()).mean()
 
-
     def _concord_loss(self):
-        alpha_1, alpha_2 = self.alpha[0], self.alpha[1]
-        p_distr = torch.distributions.Categorical(probs=alpha_1.softmax(dim=0))
-        q_distr = torch.distributions.Categorical(probs=alpha_2.softmax(dim=0))
-        return torch.distributions.kl.kl_divergence(p_distr, q_distr) + \
-                torch.distributions.kl.kl_divergence(q_distr, p_distr)
-
+        loss = torch.tensor(0.0).to(self.alpha[0].device)
+        for i in range(len(self.alpha)):
+            for j in range(i + 1, len(self.alpha)):
+                loss = js_divergence(self.alpha[i].softmax(dim=0),
+                        self.alpha[j].softmax(dim=0))
+        return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
 
 
     def export(self, batch, lam=torch.tensor(0.0)):
-        # rbf_outputs = self.rbf_net(batch).mean(dim=0).squeeze()
         rbf_outputs = self.alpha[batch]
         return list(self.op_choices.keys())[torch.argmax(rbf_outputs).item()]
 
 
 class HyperDartsInputChoice(DartsInputChoice):
-    def __init__(self, input_choice, input_size=32*2*3, sampling_mode='gumbel-softmax', t=0.2):
+    def __init__(self, input_choice, num_domains=1, 
+            sampling_mode='gumbel-softmax', t=0.2):
         super(HyperDartsInputChoice, self).__init__(input_choice)
-        self.rbf_net = BasicExpertNet(input_size, input_choice.n_candidates)
         delattr(self, 'alpha')
-        # self.alpha = self.rbf_net.parameters()
         self.alpha = nn.ParameterList([
             nn.Parameter(torch.randn(input_choice.n_candidates) * 1e-3)
-            for _ in range(2)])
+            for _ in range(num_domains)])
 
         assert sampling_mode in ['gumbel-softmax', 'softmax']
         self.sampling_mode = sampling_mode
@@ -98,7 +89,6 @@ class HyperDartsInputChoice(DartsInputChoice):
             batch: PCA representation (domain is unknown) or index of domain 
         '''
         inputs = torch.stack(inputs)
-        # rbf_outputs = self.rbf_net(batch)
         # batch has int type
         rbf_outputs = self.alpha[batch]
         alpha_shape = list(rbf_outputs.shape) + [1] * (len(inputs.size()) - 1)
@@ -115,19 +105,15 @@ class HyperDartsInputChoice(DartsInputChoice):
 
 
     def _concord_loss(self):
-        alpha_1, alpha_2 = self.alpha[0], self.alpha[1]
-        p_distr = torch.distributions.Categorical(probs=alpha_1.softmax(dim=0))
-        q_distr = torch.distributions.Categorical(probs=alpha_2.softmax(dim=0))
-        return torch.distributions.kl.kl_divergence(p_distr, q_distr) + \
-                torch.distributions.kl.kl_divergence(q_distr, p_distr)
-
+        loss = torch.tensor(0.0).to(self.alpha[0].device)
+        for i in range(len(self.alpha)):
+            for j in range(i + 1, len(self.alpha)):
+                loss += js_divergence(self.alpha[i].softmax(dim=0),
+                        self.alpha[j].softmax(dim=0))
+        return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
 
     def export(self, batch, lam=torch.tensor(0.0)):
-        '''
-            batch: PCA representation (domain is unknown) or index of domain 
-        '''
         rbf_outputs = self.alpha[batch]
-        # rbf_outputs = self.rbf_net(batch).mean(dim=0).squeeze()
         return torch.argsort(-rbf_outputs).cpu().numpy().tolist()[:self.n_chosen]
 
 
@@ -164,12 +150,11 @@ class HyperDartsTrainer(DartsTrainer):
         self.model.to(self.device)
 
         self.nas_modules = []
-        input_size=32 * 3 * 2
         replace_layer_choice(self.model, lambda lay_choice: HyperDartsLayerChoice(
-            lay_choice, sampling_mode=sampling_mode, t=t, input_size=input_size),
+            lay_choice, sampling_mode=sampling_mode, t=t, num_domains=len(self.datasets)),
             self.nas_modules)
         replace_input_choice(self.model, lambda lay_choice: HyperDartsInputChoice(
-            lay_choice,sampling_mode=sampling_mode, t=t, input_size=input_size),
+            lay_choice,sampling_mode=sampling_mode, t=t, num_domains=len(self.datasets)),
             self.nas_modules)
         for _, module in self.nas_modules:
             module.to(self.device)
@@ -219,8 +204,6 @@ class HyperDartsTrainer(DartsTrainer):
 
 
     def _logits_and_loss(self, X, y):
-        # perform PCA
-        # batch = torch.pca_lowrank(X, 2)[0].reshape(X.shape[0], -1)
         batch = self.curr_domain
 
         logits = self.model(X, batch, self.sampled_lambda)
@@ -232,14 +215,18 @@ class HyperDartsTrainer(DartsTrainer):
         if has_checkpoint(self._ckpt_dir, epoch):
             return
         self.model.train()
-        trn_meters = AverageMeterGroup()
-        val_meters= AverageMeterGroup()
+        trn_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
+        val_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         seed = self._seed + epoch
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         if epoch > 0:
-            load_checkpoint(self._ckpt_dir, epoch - 1, self.model)
+            load_checkpoint(self._ckpt_dir, epoch - 1, self.model, self.model_optim,
+                    self.ctrl_optim)
+
         for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):
+            self.ctrl_optim.zero_grad()
+            self.model_optim.zero_grad()
             for domain_idx in range(len(self.datasets)):
                 trn_X, trn_y = train_objects[domain_idx]
                 val_X, val_y = valid_objects[domain_idx]
@@ -254,26 +241,20 @@ class HyperDartsTrainer(DartsTrainer):
                 self.curr_domain = domain_idx
 
                 # phase 1. architecture step
-                self.ctrl_optim.zero_grad()
                 if self.unrolled:
                     self._unrolled_backward(trn_X, trn_y, val_X, val_y)
                 else:
                     self._backward(val_X, val_y)
-                self.ctrl_optim.step()
 
                 # phase 2: child network step
-                self.model_optim.zero_grad()
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
                 self.writer.add_scalar(f'Loss/train_{domain_idx}', loss.item() / self.p[domain_idx],
                         self._step_num)
                 loss.backward()
-                if self.grad_clip > 0:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)  # gradient clipping
-                self.model_optim.step()
 
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
-                trn_meters.update(metrics)
+                trn_meters[domain_idx].update(metrics)
                 
                 # validate
                 self.model.eval()
@@ -284,22 +265,30 @@ class HyperDartsTrainer(DartsTrainer):
                             loss.item() / self.p[domain_idx], self._step_num)
                     metrics = self.metrics(logits, val_y)
                     metrics['loss'] = loss.item() / self.p[domain_idx]
-                    val_meters.update(metrics)
-                    # update p[domain_idx]
+                    val_meters[domain_idx].update(metrics)
+                    # update p[domain_idx] using validation loss
                     self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.01)
-                    
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
                     self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
                             epoch + 1, self.num_epochs, step + 1,
                             min([len(loader) for loader in self.train_loaders]),
-                            seed, domain_idx, trn_meters, val_meters)
+                            seed, domain_idx, trn_meters[domain_idx], val_meters[domain_idx])
+
+            if self.grad_clip > 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+            # perform a step after calculating loss on each domain
+            self.model_optim.step()
+            self.ctrl_optim.step()
+
             self.p /= self.p.sum()
-            self.writer.add_scalar(f'P[0]', self.p[0].item(), self._step_num)
+            for i in range(self.p.shape[0]):
+                self.writer.add_scalar(f'P_{i}', self.p[i].item(), self._step_num)
             self._step_num += 1
 
         self.lr_scheduler.step()
-        save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict())
+        save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(), 
+                self.model_optim.state_dict(), self.ctrl_optim.state_dict())
 
 
     @torch.no_grad()

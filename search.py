@@ -71,12 +71,9 @@ if __name__ == "__main__":
     print('---' * 20)
     trainer.fit()
     # export architecture
-    final_architecture_1 = trainer.export(0)
-    print('final_architecture_1\n', final_architecture_1)
-    final_architecture_2 = trainer.export(1)
-    print('final_architecture_2\n', final_architecture_2)
-    json.dump(final_architecture_1, open(os.path.join('.', 'searchs', 
-        config['folder_name'], f'final_architecture_1.json'), 'w'))
-    json.dump(final_architecture_2, open(os.path.join('.', 'searchs', 
-        config['folder_name'], f'final_architecture_2.json'), 'w'))
+    for i in range(len(config['datasets'].split(';'))):
+        final_architecture = trainer.export(i)
+        print(f'final_architecture_{i}\n', final_architecture)
+        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
+            config['folder_name'], f'final_architecture_{i}.json'), 'w'))
 

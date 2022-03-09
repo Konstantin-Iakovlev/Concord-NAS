@@ -37,6 +37,15 @@ class Flip(object):
     def __call__(self, tensor):
         return torch.transpose(tensor, -1, -2) 
 
+
+class Negative(object):
+    def __init__(self):
+        pass
+
+    def __call__(self, tensor):
+        return -tensor
+
+
 class Broadcast(object):
     def __init__(self, channels):
         self.channels = channels
@@ -85,6 +94,12 @@ def get_dataset(cls, input_size, channels, cutout_length=0):
                     transform=transforms.Compose([train_transform, Flip()]))
             dataset_valid = MNIST(root="./data", train=False, download=True,
                     transform=transforms.Compose([valid_transform, Flip()]))
+        elif ds_name == 'MNIST-NEG':
+            print('The dataset is MNIST-NEG')
+            dataset_train = MNIST(root="./data", train=True, download=True, 
+                    transform=transforms.Compose([train_transform, Negative()]))
+            dataset_valid = MNIST(root="./data", train=False, download=True,
+                    transform=transforms.Compose([valid_transform, Negative()]))
         elif ds_name == 'SVHN':
             print('dataset is SVHN')
             dataset_train = SVHN(root="./data", split='train', download=True, transform=train_transform)

@@ -28,12 +28,32 @@ def has_checkpoint(ckpt_dir, epoch):
     return f'checkpoint_{epoch}.ckp' in os.listdir(ckpt_dir)
 
 
-def save_checkpoint(ckpt_dir, epoch, state):
-    torch.save(state, os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp'))
+def save_checkpoint(ckpt_dir, epoch, model_state_dict, model_optim_state_dict,
+        ctrl_optim_state_dict):
+    """Saves model and optimizers"""
+    # TODO: save scheduler
+    torch.save({'model_state_dict': model_state_dict, 
+        'model_optim_state_dict': model_optim_state_dict,
+        'ctrl_optim_state_dict': ctrl_optim_state_dict},
+        os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp'))
 
 
-def load_checkpoint(ckpt_dir, epoch, model):
+def load_checkpoint(ckpt_dir, epoch, model, model_optimizer, ctrl_optimizer):
+    """Loads model and optimizers"""
     assert has_checkpoint(ckpt_dir, epoch)
     file = os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp')
-    model.load_state_dict(torch.load(file))
+    checkpoint = torch.load(file)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model_optimizer.load_state_dict(checkpoint['model_optim_state_dict'])
+    ctrl_optimizer.load_state_dict(checkpoint['ctrl_optim_state_dict'])
+
+
+def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):
+    """Jensen–Shannon divergence"""
+    p_distr = torch.distributions.Categorical(probs=pr_1)
+    q_distr = torch.distributions.Categorical(probs=pr_2)
+    m_distr = torch.distributions.Categorical(probs=0.5 * (pr_1 + pr_2))
+    return 0.5 * torch.distributions.kl.kl_divergence(p_distr, m_distr) + \
+            0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
+
 
