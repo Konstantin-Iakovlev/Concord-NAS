@@ -6,7 +6,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 
-import ops
+from models import ops
 from nni.retiarii.nn.pytorch import LayerChoice, InputChoice
 from hyperDARTS import DartsInputChoice, DartsLayerChoice
 
@@ -39,7 +39,7 @@ class AuxiliaryHead(nn.Module):
 
 class Node(nn.Module):
     def __init__(self, node_id, num_prev_nodes, channels, num_downsample_connect,
-            num_domains):
+                 num_domains):
         super().__init__()
         self.ops = nn.ModuleList()
         choice_keys = []
@@ -50,12 +50,17 @@ class Node(nn.Module):
                 LayerChoice(OrderedDict([
                     ("maxpool", ops.PoolBN('max', channels, 3, stride, 1, affine=False, num_domains=num_domains)),
                     ("avgpool", ops.PoolBN('avg', channels, 3, stride, 1, affine=False, num_domains=num_domains)),
-                    ("skipconnect", ops.Identity() if stride == 1 else ops.FactorizedReduce(channels,\
-                            channels, affine=False, num_domains=num_domains)),
-                    ("sepconv3x3", ops.SepConv(channels, channels, 3, stride, 1, affine=False, num_domains=num_domains)),
-                    ("sepconv5x5", ops.SepConv(channels, channels, 5, stride, 2, affine=False, num_domains=num_domains)),
-                    ("dilconv3x3", ops.DilConv(channels, channels, 3, stride, 2, 2, affine=False, num_domains=num_domains)),
-                    ("dilconv5x5", ops.DilConv(channels, channels, 5, stride, 4, 2, affine=False, num_domains=num_domains))
+                    ("skipconnect", ops.Identity() if stride == 1 else ops.FactorizedReduce(channels, \
+                                                                                            channels, affine=False,
+                                                                                            num_domains=num_domains)),
+                    (
+                    "sepconv3x3", ops.SepConv(channels, channels, 3, stride, 1, affine=False, num_domains=num_domains)),
+                    (
+                    "sepconv5x5", ops.SepConv(channels, channels, 5, stride, 2, affine=False, num_domains=num_domains)),
+                    ("dilconv3x3",
+                     ops.DilConv(channels, channels, 3, stride, 2, 2, affine=False, num_domains=num_domains)),
+                    ("dilconv5x5",
+                     ops.DilConv(channels, channels, 5, stride, 4, 2, affine=False, num_domains=num_domains))
                 ]), label=choice_keys[-1]))
         self.drop_path = ops.DropPath()
         self.input_switch = InputChoice(n_candidates=len(choice_keys), n_chosen=2, label="{}_switch".format(node_id))
@@ -74,7 +79,6 @@ class Node(nn.Module):
             hyperloss += op._hyperloss(batch, lam)
         return hyperloss
 
-
     def _concord_loss(self):
         assert isinstance(self.input_switch, DartsInputChoice)
         concord_loss = self.input_switch._concord_loss()
@@ -83,12 +87,10 @@ class Node(nn.Module):
             concord_loss += op._concord_loss()
         return concord_loss
 
-        
 
 class Cell(nn.Module):
-
     def __init__(self, n_nodes, channels_pp, channels_p, channels, reduction_p, reduction,
-            num_domains):
+                 num_domains):
         super().__init__()
         self.reduction = reduction
         self.n_nodes = n_nodes
@@ -96,13 +98,13 @@ class Cell(nn.Module):
         # If previous cell is reduction cell, current input size does not match with
         # output size of cell[k-2]. So the output[k-2] should be reduced by preprocessing.
         if reduction_p:
-            self.preproc0 = ops.FactorizedReduce(channels_pp, channels, affine=False,\
-                    num_domains=num_domains)
+            self.preproc0 = ops.FactorizedReduce(channels_pp, channels, affine=False, \
+                                                 num_domains=num_domains)
         else:
-            self.preproc0 = ops.StdConv(channels_pp, channels, 1, 1, 0, affine=False,\
-                    num_domains=num_domains)
-        self.preproc1 = ops.StdConv(channels_p, channels, 1, 1, 0, affine=False,\
-                num_domains=num_domains)
+            self.preproc0 = ops.StdConv(channels_pp, channels, 1, 1, 0, affine=False, \
+                                        num_domains=num_domains)
+        self.preproc1 = ops.StdConv(channels_p, channels, 1, 1, 0, affine=False, \
+                                    num_domains=num_domains)
 
         # generate dag
         self.mutable_ops = nn.ModuleList()
@@ -129,9 +131,8 @@ class Cell(nn.Module):
 
 
 class CNN(nn.Module):
-
     def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
-            n_nodes=4, stem_multiplier=3, auxiliary=False):
+                 n_nodes=4, stem_multiplier=3, auxiliary=False):
         super().__init__()
         self.in_channels = in_channels
         self.channels = channels
@@ -165,8 +166,7 @@ class CNN(nn.Module):
 
             if i == self.aux_pos:
                 self.aux_head = nn.ModuleList([AuxiliaryHead(input_size // 4,
-                    channels_p, n_classes)] for _ in range(n_heads))
-                # self.aux_head = AuxiliaryHead(input_size // 4, channels_p, n_classes)
+                                                             channels_p, n_classes)] for _ in range(n_heads))
 
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
@@ -198,8 +198,6 @@ class CNN(nn.Module):
         for cell in self.cells:
             return cell._hyperloss(batch, lam)
 
-
     def _concord_loss(self):
         for cell in self.cells:
             return cell._concord_loss()
-

@@ -3,6 +3,7 @@
 import os
 import torch
 
+
 def accuracy(output, target, topk=(1,)):
     """ Computes the precision@k for the specified values of k """
     maxk = max(topk)
@@ -29,20 +30,20 @@ def has_checkpoint(ckpt_dir, epoch):
 
 
 def save_checkpoint(ckpt_dir, epoch, model_state_dict, model_optim_state_dict,
-        ctrl_optim_state_dict):
+                    ctrl_optim_state_dict):
     """Saves model and optimizers"""
     # TODO: save scheduler
-    torch.save({'model_state_dict': model_state_dict, 
-        'model_optim_state_dict': model_optim_state_dict,
-        'ctrl_optim_state_dict': ctrl_optim_state_dict},
-        os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp'))
+    torch.save({'model_state_dict': model_state_dict,
+                'model_optim_state_dict': model_optim_state_dict,
+                'ctrl_optim_state_dict': ctrl_optim_state_dict},
+               os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp'))
 
 
 def load_checkpoint(ckpt_dir, epoch, model, model_optimizer, ctrl_optimizer):
     """Loads model and optimizers"""
     assert has_checkpoint(ckpt_dir, epoch)
     file = os.path.join(ckpt_dir, f'checkpoint_{epoch}.ckp')
-    checkpoint = torch.load(file)
+    checkpoint = torch.load(file, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     model_optimizer.load_state_dict(checkpoint['model_optim_state_dict'])
     ctrl_optimizer.load_state_dict(checkpoint['ctrl_optim_state_dict'])
@@ -54,6 +55,4 @@ def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):
     q_distr = torch.distributions.Categorical(probs=pr_2)
     m_distr = torch.distributions.Categorical(probs=0.5 * (pr_1 + pr_2))
     return 0.5 * torch.distributions.kl.kl_divergence(p_distr, m_distr) + \
-            0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
-
-
+           0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)

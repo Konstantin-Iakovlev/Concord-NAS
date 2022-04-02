@@ -16,6 +16,9 @@ cells/*
 # .vim
 .vim/*
 
+# .idae
+.idea/**
+
 test.py
 
 # C extensions

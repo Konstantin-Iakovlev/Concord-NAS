@@ -3,7 +3,6 @@
 
 import json
 import logging
-import time
 from argparse import ArgumentParser
 from configobj import ConfigObj
 import os
@@ -12,8 +11,7 @@ import torch
 import torch.nn as nn
 
 import datasets
-from model import CNN
-from nni.nas.pytorch.callbacks import ArchitectureCheckpoint, LRSchedulerCallback
+from models.model import CNN
 from utils import accuracy
 
 from hyperDARTS import HyperDartsTrainer
@@ -30,22 +28,23 @@ if __name__ == "__main__":
     # print(config['datasets'].split(';'))
 
     datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
-            int(config['darts']['input_size']), int(config['darts']['input_channels']))
+                                                          int(config['darts']['input_size']),
+                                                          int(config['darts']['input_channels']))
     # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
 
     model = CNN(int(config['darts']['input_size']),
-            int(config['darts']['input_channels']),
-            int(config['darts']['channels']),
-            int(config['darts']['n_classes']),
-            int(config['darts']['layers']),
-            n_heads=len(datasets_train),
-            n_nodes=int(config['darts']['n_nodes']),
-            stem_multiplier=int(config['darts']['stem_multiplier']))
+                int(config['darts']['input_channels']),
+                int(config['darts']['channels']),
+                int(config['darts']['n_classes']),
+                int(config['darts']['layers']),
+                n_heads=len(datasets_train),
+                n_nodes=int(config['darts']['n_nodes']),
+                stem_multiplier=int(config['darts']['stem_multiplier']))
     criterion = nn.CrossEntropyLoss()
 
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
-            momentum=float(config['darts']['optim']['w_momentum']),
-            weight_decay=float(config['darts']['optim']['w_weight_decay']))
+                            momentum=float(config['darts']['optim']['w_momentum']),
+                            weight_decay=float(config['darts']['optim']['w_weight_decay']))
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.025)
     trainer = HyperDartsTrainer(config['folder_name'],
                                 model,
@@ -63,7 +62,7 @@ if __name__ == "__main__":
                                 arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
                                 unrolled=eval(config['darts']['unrolled']),
                                 betas=(float(config['darts']['optim']['alpha_beta_1']),
-                                    float(config['darts']['optim']['alpha_beta_2'])),
+                                       float(config['darts']['optim']['alpha_beta_2'])),
                                 sampling_mode=config['darts']['sampling_mode'],
                                 t=float(config['darts']['initial_temp'])
                                 )
@@ -74,6 +73,5 @@ if __name__ == "__main__":
     for i in range(len(config['datasets'].split(';'))):
         final_architecture = trainer.export(i)
         print(f'final_architecture_{i}\n', final_architecture)
-        json.dump(final_architecture, open(os.path.join('.', 'searchs', 
-            config['folder_name'], f'final_architecture_{i}.json'), 'w'))
-
+        json.dump(final_architecture, open(os.path.join('.', 'searchs',
+                                                        config['folder_name'], f'final_architecture_{i}.json'), 'w'))

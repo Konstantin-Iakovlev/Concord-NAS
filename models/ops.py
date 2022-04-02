@@ -27,6 +27,7 @@ class DropPath(nn.Module):
 
         return x
 
+
 class Identity(nn.Module):
     """
     Identity operation
