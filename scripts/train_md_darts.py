@@ -11,10 +11,10 @@ import torch
 import torch.nn as nn
 
 import datasets
-from models.model import CNN
+from models.md_darts import CNN
 from utils import accuracy
 
-from hyperDARTS import HyperDartsTrainer
+from trainers.md_darts_trainer import MdDartsTrainer
 
 logger = logging.getLogger('nni')
 
@@ -46,26 +46,26 @@ if __name__ == "__main__":
                             momentum=float(config['darts']['optim']['w_momentum']),
                             weight_decay=float(config['darts']['optim']['w_weight_decay']))
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.025)
-    trainer = HyperDartsTrainer(config['folder_name'],
-                                model,
-                                loss=criterion,
-                                metrics=lambda output, target: accuracy(output, target, topk=(1,)),
-                                optimizer=optim,
-                                lr_scheduler=lr_scheduler,
-                                num_epochs=int(config['epochs']),
-                                datasets=datasets_train,
-                                seed=int(config['seed']),
-                                concord_coeff=float(config['darts']['concord_coeff']),
-                                batch_size=int(config['batch_size']),
-                                log_frequency=int(config['log_frequency']),
-                                arc_learning_rate=float(config['darts']['optim']['alpha_lr']),
-                                arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
-                                unrolled=eval(config['darts']['unrolled']),
-                                betas=(float(config['darts']['optim']['alpha_beta_1']),
+    trainer = MdDartsTrainer(config['folder_name'],
+                             model,
+                             loss=criterion,
+                             metrics=lambda output, target: accuracy(output, target, topk=(1,)),
+                             optimizer=optim,
+                             lr_scheduler=lr_scheduler,
+                             num_epochs=int(config['epochs']),
+                             datasets=datasets_train,
+                             seed=int(config['seed']),
+                             concord_coeff=float(config['darts']['concord_coeff']),
+                             batch_size=int(config['batch_size']),
+                             log_frequency=int(config['log_frequency']),
+                             arc_learning_rate=float(config['darts']['optim']['alpha_lr']),
+                             arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
+                             unrolled=eval(config['darts']['unrolled']),
+                             betas=(float(config['darts']['optim']['alpha_beta_1']),
                                        float(config['darts']['optim']['alpha_beta_2'])),
-                                sampling_mode=config['darts']['sampling_mode'],
-                                t=float(config['darts']['initial_temp'])
-                                )
+                             sampling_mode=config['darts']['sampling_mode'],
+                             t=float(config['darts']['initial_temp'])
+                             )
     print('Trainer initialized')
     print('---' * 20)
     trainer.fit()
@@ -73,5 +73,5 @@ if __name__ == "__main__":
     for i in range(len(config['datasets'].split(';'))):
         final_architecture = trainer.export(i)
         print(f'final_architecture_{i}\n', final_architecture)
-        json.dump(final_architecture, open(os.path.join('.', 'searchs',
+        json.dump(final_architecture, open(os.path.join('searchs',
                                                         config['folder_name'], f'final_architecture_{i}.json'), 'w'))

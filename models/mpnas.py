@@ -4,16 +4,18 @@ import models.ops as ops
 
 from typing import List, Tuple
 
+from models.controller import Controller
+
 
 class MPNAS(nn.Module):
-    def __init__(self, input_size, in_channels, channels, n_layers,
-                 nodes_per_layer, n_classes=10, num_domains=1):
+    def __init__(self, input_size, input_channels, channels, layers,
+                 nodes_per_layer, n_classes=10, num_domains=1, learning_rate=3e-4):
         super(MPNAS, self).__init__()
-        self.n_layers = n_layers
-        self.preproc = nn.Conv2d(in_channels, channels, 3, 1, 1, bias=False)
-        self.preproc_bn = [nn.BatchNorm2d(channels) for _ in range(num_domains)]
+        self.n_layers = layers
+        self.preproc = nn.Conv2d(input_channels, channels, 3, 1, 1, bias=False)
+        self.preproc_bn = nn.ModuleList([nn.BatchNorm2d(channels) for _ in range(num_domains)])
         self.supernetwork = nn.ModuleDict()
-        for layer_idx in range(1, n_layers + 1):
+        for layer_idx in range(1, layers + 1):
             for from_idx in range(nodes_per_layer):
                 for to_idx in range(nodes_per_layer):
                     self.supernetwork.update({
@@ -45,8 +47,12 @@ class MPNAS(nn.Module):
                     })
                     self.drop_path = ops.DropPath()
 
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self.linear = nn.ModuleList([nn.Linear(channels, n_classes) for _ in range(num_domains)])
+        self.gap = nn.AdaptiveAvgPool2d(4)
+        self.linear = nn.ModuleList([nn.Linear(channels * 4 * 4, n_classes) for _ in range(num_domains)])
+
+        prim_names = list(set([op.split('_')[0] for op in self.supernetwork]))
+        self.controller = Controller(layers, nodes_per_layer, prim_names, num_domains=num_domains,
+                                     learning_rate=learning_rate)
 
     def forward(self, x: torch.tensor, path: List[Tuple[int, int, str]], domain_idx=0):
         assert len(path) == self.n_layers

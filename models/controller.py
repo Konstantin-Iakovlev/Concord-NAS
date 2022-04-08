@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 class Controller(nn.Module):
     def __init__(self, n_layers, nodes_per_layer, primitives_names: List[str], dim_hidden=32, num_domains=2,
-                 decay=0.95):
+                 ma_decay=0.95, learning_rate=3e-4):
         super(Controller, self).__init__()
         self.n_layers = n_layers
         self.nodes_per_layer = nodes_per_layer
@@ -25,9 +25,9 @@ class Controller(nn.Module):
         self.h0 = nn.Parameter(torch.zeros(num_domains, dim_hidden))
         self.c0 = nn.Parameter(torch.zeros(num_domains, dim_hidden))
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-4)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
         self.baseline = None
-        self.decay = decay
+        self.decay = ma_decay
 
     def forward(self, path: List[List[Tuple[int, int, str]]]) -> torch.Tensor:
         """
@@ -36,15 +36,15 @@ class Controller(nn.Module):
         """
         h_curr, c_curr = self.h0, self.c0
         input_states = []  # (seq_len, num_domains)
-        inp_state = torch.LongTensor([path[d][0][0] for d in range(len(path))])
+        inp_state = torch.LongTensor([path[d][0][0] for d in range(len(path))]).to(self.h0.device)
         input_states.append(inp_state)
         for layer_idx in range(len(path[0])):
             # add primitive
-            inp_state = torch.LongTensor([self.primitives_to_idx[path[d][layer_idx][2]] for d in range(len(path))])
+            inp_state = torch.LongTensor([self.primitives_to_idx[path[d][layer_idx][2]] for d in range(len(path))]).to(self.h0.device)
             input_states.append(inp_state)
 
             # add position
-            inp_state = torch.LongTensor([path[d][layer_idx][1] for d in range(len(path))])
+            inp_state = torch.LongTensor([path[d][layer_idx][1] for d in range(len(path))]).to(self.h0.device)
             input_states.append(inp_state)
 
         log_probs = torch.zeros(self.num_domains, requires_grad=True).to(self.h0.device)
@@ -68,7 +68,7 @@ class Controller(nn.Module):
     def sample(self, greedy=False) -> List[List[Tuple[int, int, str]]]:
         """
         param: greedy: if True then use argmax strategy, otherwise sampling
-        returns: network path
+        returns: network paths for each domain
         """
         h_curr, c_curr = self.h0, self.c0
         path: List[List[int, int, str]] = []

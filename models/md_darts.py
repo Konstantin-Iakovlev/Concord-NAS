@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from models import ops
 from nni.retiarii.nn.pytorch import LayerChoice, InputChoice
-from hyperDARTS import DartsInputChoice, DartsLayerChoice
+from trainers.md_darts_trainer import DartsInputChoice, DartsLayerChoice
 
 
 class AuxiliaryHead(nn.Module):

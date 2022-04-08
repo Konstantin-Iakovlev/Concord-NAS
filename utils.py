@@ -46,7 +46,8 @@ def load_checkpoint(ckpt_dir, epoch, model, model_optimizer, ctrl_optimizer):
     checkpoint = torch.load(file, map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     model_optimizer.load_state_dict(checkpoint['model_optim_state_dict'])
-    ctrl_optimizer.load_state_dict(checkpoint['ctrl_optim_state_dict'])
+    if ctrl_optimizer is not None:
+        ctrl_optimizer.load_state_dict(checkpoint['ctrl_optim_state_dict'])
 
 
 def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):

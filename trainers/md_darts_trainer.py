@@ -11,7 +11,7 @@ from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
 from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence
 
 
-class HyperDartsLayerChoice(DartsLayerChoice):
+class MdDartsLayerChoice(DartsLayerChoice):
     def __init__(self, layer_choice, num_domains=1,
                  sampling_mode='softmax', t=0.2, *args, **kwargs):
         """
@@ -19,7 +19,7 @@ class HyperDartsLayerChoice(DartsLayerChoice):
             sampling_mode: str, sampling mode
             t: float, temperature
         """
-        super(HyperDartsLayerChoice, self).__init__(layer_choice)
+        super(MdDartsLayerChoice, self).__init__(layer_choice)
         self.sampling_mode = sampling_mode
         assert sampling_mode in ['gumbel-softmax', 'softmax']
         self.t = t
@@ -70,10 +70,10 @@ class HyperDartsLayerChoice(DartsLayerChoice):
         return list(self.op_choices.keys())[torch.argmax(rbf_outputs).item()]
 
 
-class HyperDartsInputChoice(DartsInputChoice):
+class MdDartsInputChoice(DartsInputChoice):
     def __init__(self, input_choice, num_domains=1,
                  sampling_mode='softmax', t=0.2):
-        super(HyperDartsInputChoice, self).__init__(input_choice)
+        super(MdDartsInputChoice, self).__init__(input_choice)
         delattr(self, 'alpha')
         self.alpha = nn.ParameterList([
             nn.Parameter(torch.randn(input_choice.n_candidates) * 1e-3)
@@ -114,7 +114,7 @@ class HyperDartsInputChoice(DartsInputChoice):
         return torch.argsort(-rbf_outputs).cpu().numpy().tolist()[:self.n_chosen]
 
 
-class HyperDartsTrainer(DartsTrainer):
+class MdDartsTrainer(DartsTrainer):
     def __init__(self, folder_name, model, loss, metrics, optimizer, lr_scheduler,
                  num_epochs, datasets, seed=0, concord_coeff=0.0, grad_clip=5.,
                  batch_size=64, workers=0,
@@ -140,17 +140,17 @@ class HyperDartsTrainer(DartsTrainer):
         self._ckpt_dir = os.path.join('searchs', folder_name)
         self._seed = seed
         self._logger = logging.getLogger('darts')
-        self.writer = SummaryWriter(os.path.join('.', 'searchs', folder_name))
+        self.writer = SummaryWriter(os.path.join('searchs', folder_name))
         self._step_num = 0
         self.p = torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
 
         self.model.to(self.device)
 
         self.nas_modules = []
-        replace_layer_choice(self.model, lambda lay_choice: HyperDartsLayerChoice(
+        replace_layer_choice(self.model, lambda lay_choice: MdDartsLayerChoice(
             lay_choice, sampling_mode=sampling_mode, t=t, num_domains=len(self.datasets)),
                              self.nas_modules)
-        replace_input_choice(self.model, lambda lay_choice: HyperDartsInputChoice(
+        replace_input_choice(self.model, lambda lay_choice: MdDartsInputChoice(
             lay_choice, sampling_mode=sampling_mode, t=t, num_domains=len(self.datasets)),
                              self.nas_modules)
         for _, module in self.nas_modules:
@@ -173,7 +173,7 @@ class HyperDartsTrainer(DartsTrainer):
         for params in ctrl_params.values():
             list_of_params.extend(params)
         self.ctrl_optim = torch.optim.Adam(list_of_params, arc_learning_rate, betas=betas,
-                                           weight_decay=1.0E-3)
+                                           weight_decay=arc_weight_decay)
         self.unrolled = unrolled
         self.grad_clip = grad_clip
 
