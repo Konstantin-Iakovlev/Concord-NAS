@@ -82,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument("--architecture", default='mnist_basic.json')
     args = parser.parse_args()
     
-    with open(os.path.join('searchs', args.dir ,args.architecture), 'r') as inp:
+    with open(os.path.join('searchs', args.dir, args.architecture), 'r') as inp:
         architecture = json.load(inp)
     architecture = get_architecture(architecture)
     architecture = {key: architecture[key][0] for key in architecture if 'switch' not in key} 

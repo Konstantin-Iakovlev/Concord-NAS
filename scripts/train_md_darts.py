@@ -62,16 +62,18 @@ if __name__ == "__main__":
                              arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
                              unrolled=eval(config['darts']['unrolled']),
                              betas=(float(config['darts']['optim']['alpha_beta_1']),
-                                       float(config['darts']['optim']['alpha_beta_2'])),
+                                    float(config['darts']['optim']['alpha_beta_2'])),
                              sampling_mode=config['darts']['sampling_mode'],
                              t=float(config['darts']['initial_temp'])
                              )
     print('Trainer initialized')
     print('---' * 20)
     trainer.fit()
-    # export architecture
+    # export architectures
+    architectures = []
     for i in range(len(config['datasets'].split(';'))):
         final_architecture = trainer.export(i)
+        architectures.append(final_architecture)
         print(f'final_architecture_{i}\n', final_architecture)
-        json.dump(final_architecture, open(os.path.join('searchs',
-                                                        config['folder_name'], f'final_architecture_{i}.json'), 'w'))
+    json.dump(architectures, open(os.path.join('searchs', config['folder_name'], 'final_architecture.json'), 'w'),
+              indent=2)

@@ -9,6 +9,9 @@ __pycache__/
 data/*
 # searchs
 searchs/*
+# retrain
+retrain/**/**
+*.json
 
 # cells
 cells/*

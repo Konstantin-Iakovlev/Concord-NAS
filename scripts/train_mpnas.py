@@ -17,7 +17,7 @@ logger = logging.getLogger('nni')
 
 if __name__ == "__main__":
     parser = ArgumentParser("mpnas")
-    parser.add_argument("--config", default='md_main.cfg')
+    parser.add_argument("--config", default='mpnas_basic.cfg')
     args = parser.parse_args()
 
     config = ConfigObj(os.path.join('configs', args.config))

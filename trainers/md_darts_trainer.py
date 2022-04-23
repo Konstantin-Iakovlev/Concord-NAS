@@ -13,11 +13,10 @@ from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergenc
 
 class MdDartsLayerChoice(DartsLayerChoice):
     def __init__(self, layer_choice, num_domains=1,
-                 sampling_mode='softmax', t=0.2, *args, **kwargs):
+                 sampling_mode: str = 'softmax', t: float = 0.2):
         """
-        Params:
-            sampling_mode: str, sampling mode
-            t: float, temperature
+        param: sampling_mode: sampling mode
+        param: t: temperature
         """
         super(MdDartsLayerChoice, self).__init__(layer_choice)
         self.sampling_mode = sampling_mode
@@ -32,15 +31,13 @@ class MdDartsLayerChoice(DartsLayerChoice):
                                           for p in op.parameters()]))
         self.op_param_num = nn.Parameter(torch.tensor(self.op_param_num), requires_grad=False)
 
-    def forward(self, inputs, batch, lam=torch.tensor(0.0)):
+    def forward(self, inputs, domain_idx: int):
         """
-            Params:
-            inputs: prev node value
-            batch: PCA representation (domain is unknown) or index of domain
-            lam: regularization coefficient
+        param: inputs: prev node value
+        param: domain_idx: domain index
         """
-        op_results = torch.stack([op(inputs, domain_idx=batch) for op in self.op_choices.values()])
-        rbf_outputs = self.alpha[batch]
+        op_results = torch.stack([op(inputs, domain_idx=domain_idx) for op in self.op_choices.values()])
+        rbf_outputs = self.alpha[domain_idx]
         if self.sampling_mode == 'gumbel-softmax':
             weights = torch.distributions.RelaxedOneHotCategorical(
                 self.t, logits=rbf_outputs
@@ -49,11 +46,6 @@ class MdDartsLayerChoice(DartsLayerChoice):
             weights = F.softmax(rbf_outputs / self.t, dim=-1)
         alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 1)
         return torch.sum(op_results * weights.view(*alpha_shape), 0)
-
-    def _hyperloss(self, batch, lam=torch.tensor(0.0)):
-        rbf_outputs = self.alpha[batch]
-        weights = F.softmax(rbf_outputs, dim=-1)
-        return lam * (weights @ self.op_param_num.float()).mean()
 
     def _concord_loss(self):
         loss = torch.tensor(0.0).to(self.alpha[0].device)
@@ -65,8 +57,8 @@ class MdDartsLayerChoice(DartsLayerChoice):
                                      self.alpha[j].softmax(dim=0))
         return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
 
-    def export(self, batch, lam=torch.tensor(0.0)):
-        rbf_outputs = self.alpha[batch]
+    def export(self, domain_idx: int):
+        rbf_outputs = self.alpha[domain_idx]
         return list(self.op_choices.keys())[torch.argmax(rbf_outputs).item()]
 
 
@@ -83,10 +75,10 @@ class MdDartsInputChoice(DartsInputChoice):
         self.sampling_mode = sampling_mode
         self.t = t
 
-    def forward(self, inputs, batch, lam=torch.tensor(0.0)):
+    def forward(self, inputs, domain_idx: int):
         inputs = torch.stack(inputs)
         # batch has int type
-        rbf_outputs = self.alpha[batch]
+        rbf_outputs = self.alpha[domain_idx]
         alpha_shape = list(rbf_outputs.shape) + [1] * (len(inputs.size()) - 1)
         if self.sampling_mode == 'softmax':
             return torch.sum(inputs * F.softmax(rbf_outputs / self.t, -1).view(*alpha_shape), 0)
@@ -95,9 +87,6 @@ class MdDartsInputChoice(DartsInputChoice):
                 self.t, logits=rbf_outputs
             ).sample()
             return torch.sum(inputs * weights.view(*alpha_shape), 0)
-
-    def _hyperloss(self, batch, lam=torch.tensor(0.0)):
-        return lam * 0
 
     def _concord_loss(self):
         loss = torch.tensor(0.0).to(self.alpha[0].device)
@@ -109,8 +98,8 @@ class MdDartsInputChoice(DartsInputChoice):
                                       self.alpha[j].softmax(dim=0))
         return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
 
-    def export(self, batch, lam=torch.tensor(0.0)):
-        rbf_outputs = self.alpha[batch]
+    def export(self, domain_idx: int):
+        rbf_outputs = self.alpha[domain_idx]
         return torch.argsort(-rbf_outputs).cpu().numpy().tolist()[:self.n_chosen]
 
 
@@ -123,7 +112,6 @@ class MdDartsTrainer(DartsTrainer):
                  arc_weight_decay=1e-3, unrolled=False,
                  sampling_mode='softmax', t=1.0
                  ):
-        # super(HyperDartsTrainer, self).__init__(*args, **kwargs)
         self.model = model
         self.loss = loss
         self.metrics = metrics
@@ -135,11 +123,13 @@ class MdDartsTrainer(DartsTrainer):
             if device is None else device
         self.concord_coeff = torch.tensor(concord_coeff).to(self.device)
         self.log_frequency = log_frequency
-        logging.basicConfig(filename=os.path.join('searchs', folder_name,
-                                                  folder_name + '.log'), level=logging.INFO)
         self._ckpt_dir = os.path.join('searchs', folder_name)
         self._seed = seed
+        os.makedirs(os.path.join('searchs', folder_name), exist_ok=True)
         self._logger = logging.getLogger('darts')
+        self._logger.addHandler(logging.FileHandler(os.path.join('searchs', folder_name,
+                                                                 folder_name + '.log')))
+
         self.writer = SummaryWriter(os.path.join('searchs', folder_name))
         self._step_num = 0
         self.p = torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
@@ -199,11 +189,11 @@ class MdDartsTrainer(DartsTrainer):
                                                                   num_workers=self.workers))
 
     def _logits_and_loss(self, X, y):
-        batch = self.curr_domain
+        domain_idx = self.curr_domain
 
-        logits = self.model(X, batch, self.sampled_lambda)
+        logits = self.model(X, domain_idx)
         loss = self.loss(logits, y) + self.concord_coeff * self.model._concord_loss()
-        return logits, loss * self.p[batch]
+        return logits, loss * self.p[domain_idx]
 
     def _train_one_epoch(self, epoch):
         if has_checkpoint(self._ckpt_dir, epoch):
@@ -227,10 +217,6 @@ class MdDartsTrainer(DartsTrainer):
                 trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
                 val_X, val_y = to_device(val_X, self.device), to_device(val_y, self.device)
 
-                # sample lambda
-                lam = torch.tensor(0.0).to(self.device)
-                self.sampled_lambda = lam
-
                 # save current domain
                 self.curr_domain = domain_idx
 
@@ -252,7 +238,6 @@ class MdDartsTrainer(DartsTrainer):
 
                 # validate
                 self.model.eval()
-                self.sampled_lambda = torch.tensor(0.0).to(self.device)
                 with torch.no_grad():
                     logits, loss = self._logits_and_loss(val_X, val_y)
                     self.writer.add_scalar(f'Loss/val_{domain_idx}',
@@ -285,10 +270,10 @@ class MdDartsTrainer(DartsTrainer):
                         self.model_optim.state_dict(), self.ctrl_optim.state_dict())
 
     @torch.no_grad()
-    def export(self, batch):
-        batch = to_device(batch, self.device)
+    def export(self, domain_idx: int):
+        domain_idx = to_device(domain_idx, self.device)
         result = dict()
         for name, module in self.nas_modules:
             if name not in result:
-                result[name] = module.export(batch)
+                result[name] = module.export(domain_idx)
         return result
