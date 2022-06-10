@@ -1,6 +1,3 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
-
 import json
 import logging
 from argparse import ArgumentParser
@@ -20,17 +17,14 @@ logger = logging.getLogger('nni')
 
 if __name__ == "__main__":
     parser = ArgumentParser("darts")
-    parser.add_argument("--config", default='cifar_basic.cfg')
+    parser.add_argument("--config", default='configs/md_mnist_basic/md_darts.cfg')
     args = parser.parse_args()
 
-    config = ConfigObj(os.path.join('configs', args.config))
-    # print(config)
-    # print(config['datasets'].split(';'))
+    config = ConfigObj(args.config)
 
-    datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
-                                                          int(config['darts']['input_size']),
-                                                          int(config['darts']['input_channels']))
-    # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
+    datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
+                                                           int(config['darts']['input_size']),
+                                                           int(config['darts']['input_channels']))
 
     model = CNN(int(config['darts']['input_size']),
                 int(config['darts']['input_channels']),

@@ -1,5 +1,5 @@
-# Run basic experiment
-python3 search.py --config md_basic.cfg
+# Architecture search
+`python scripts/train_md_darts.py --config configs/md_mnist_basic/md_darts.cfg`
 
-# train the best architecture
-python3 retrain.py --arc-checkpoint ./checkpoints/epoch_49.json
+# Retrain
+`python scripts/retrain_md_darts.py --config configs/md_mnist_basic/md_darts_retrain.cfg`

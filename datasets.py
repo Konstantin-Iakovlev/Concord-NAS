@@ -1,10 +1,11 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
-
 import numpy as np
 import torch
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, MNIST, SVHN
+from torchvision.transforms.functional import rotate
+from torch.utils.data import ConcatDataset
+
+from typing import Union, List
 
 
 class Cutout(object):
@@ -30,12 +31,12 @@ class Cutout(object):
         return img
 
 
-class Flip(object):
-    def __init__(self):
-        pass
+class Rotate(object):
+    def __init__(self, angle: float):
+        self.angle = angle
 
     def __call__(self, tensor):
-        return torch.transpose(tensor, -1, -2) 
+        return rotate(tensor, self.angle)
 
 
 class Negative(object):
@@ -54,7 +55,18 @@ class Broadcast(object):
         return tensor.broadcast_to(self.channels, *tensor.shape[1:])
 
 
-def get_dataset(cls, input_size, channels, cutout_length=0):
+def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int = 0):
+    """
+    Args:
+        ds_name (str): dataset name
+            ex. MNIST-180, MNIST-0+MNIST-180
+        input_size (int): height and width of the image
+        channels (int): number of channels
+        cutout_length (int): length of cutout
+
+    Returns:
+        dataset_train, dataset_val
+    """
     if channels == 1:
         MEAN = [0.5]
         STD = [0.25]
@@ -69,43 +81,47 @@ def get_dataset(cls, input_size, channels, cutout_length=0):
         cutout.append(Cutout(cutout_length))
 
     train_transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(input_size),
-        Broadcast(channels)] + normalize + cutout)
-    valid_transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(input_size), 
-        Broadcast(channels)] + normalize)
+                                          Broadcast(channels)] + normalize + cutout)
+    valid_transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(input_size),
+                                          Broadcast(channels)] + normalize)
 
-    # list of pairs: (dataset_train, dataset_valid)
     datasets_train = []
-    datasets_valid = []
-    if type(cls) != list:
-        cls = [cls]
-    for ds_name in cls:
-        if ds_name == "cifar10":
-            print('The dataset is CIFAR-10')
+    datasets_test = []
+    for sub_ds in ds_name.split('+'):
+        if sub_ds == "cifar10":
             dataset_train = CIFAR10(root="./data", train=True, download=True, transform=train_transform)
-            dataset_valid = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
-        elif ds_name == 'MNIST':
-            print('The dataset is MNIST')
-            # composed = transforms.Compose([transforms.ToTensor()])
-            dataset_train = MNIST(root="./data", train=True, download=True, transform=train_transform)
-            dataset_valid = MNIST(root="./data", train=False, download=True, transform=valid_transform)
-        elif ds_name == 'MNIST-TR':
-            print('The dataset is MNIST-TR')
-            dataset_train = MNIST(root="./data", train=True, download=True, 
-                    transform=transforms.Compose([train_transform, Flip()]))
-            dataset_valid = MNIST(root="./data", train=False, download=True,
-                    transform=transforms.Compose([valid_transform, Flip()]))
-        elif ds_name == 'MNIST-NEG':
-            print('The dataset is MNIST-NEG')
-            dataset_train = MNIST(root="./data", train=True, download=True, 
-                    transform=transforms.Compose([train_transform, Negative()]))
-            dataset_valid = MNIST(root="./data", train=False, download=True,
-                    transform=transforms.Compose([valid_transform, Negative()]))
-        elif ds_name == 'SVHN':
-            print('dataset is SVHN')
+            dataset_test = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
+        elif sub_ds.startswith('MNIST'):
+            angle = float(sub_ds.split('-')[-1])
+            dataset_train = MNIST(root="./data", train=True, download=True,
+                                  transform=transforms.Compose([train_transform, Rotate(angle)]))
+            dataset_test = MNIST(root="./data", train=False, download=True,
+                                 transform=transforms.Compose([valid_transform, Rotate(angle)]))
+        elif sub_ds == 'SVHN':
             dataset_train = SVHN(root="./data", split='train', download=True, transform=train_transform)
-            dataset_valid = SVHN(root="./data", split='test', download=True, transform=valid_transform)
+            dataset_test = SVHN(root="./data", split='test', download=True, transform=valid_transform)
         else:
             raise NotImplementedError
         datasets_train.append(dataset_train)
-        datasets_valid.append(dataset_valid)
-    return datasets_train, datasets_valid 
+        datasets_test.append(dataset_test)
+    return ConcatDataset(datasets_train), ConcatDataset(datasets_test)
+
+
+def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_length: int = 0):
+    """
+    Args:
+        ds_names (List[str]):
+        input_size (int):
+        channels (int):
+        cutout_length (int):
+
+    Returns:
+        List of pairs of datasets
+    """
+    train_datasets = []
+    test_datasets = []
+    for ds_name in ds_names:
+        train_ds, val_ds = get_dataset(ds_name, input_size, channels, cutout_length)
+        train_datasets.append(train_ds)
+        test_datasets.append(val_ds)
+    return train_datasets, test_datasets

@@ -22,12 +22,10 @@ if __name__ == "__main__":
 
     config = ConfigObj(os.path.join('configs', args.config))
     print(config)
-    # print(config['datasets'].split(';'))
 
-    datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
-                                                          int(config['mpnas']['input_size']),
-                                                          int(config['mpnas']['input_channels']))
-    # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
+    datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
+                                                           int(config['mpnas']['input_size']),
+                                                           int(config['mpnas']['input_channels']))
 
     model = MPNAS(int(config['mpnas']['input_size']),
                   int(config['mpnas']['input_channels']),

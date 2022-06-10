@@ -8,50 +8,15 @@ import torch.nn as nn
 from configobj import ConfigObj
 from torch.utils.tensorboard import SummaryWriter
 
-from collections import OrderedDict
-from typing import List, Dict
-from nni.retiarii.nn.pytorch import LayerChoice, InputChoice
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
     replace_layer_choice, replace_input_choice, to_device
 from nni.retiarii.oneshot.pytorch.darts import DartsTrainer
 
 import datasets
-from models.md_darts import CNN
 from utils import has_checkpoint, save_checkpoint, load_checkpoint, accuracy
 
-
-class MdDartsSparceLayerChoice(nn.Module):
-    def __init__(self, layer_choice, domain_to_name: List[str]):
-        """
-        param: layer_choice: len of layer_choice <= number of domains
-        param: domain_to_name: list of len (num_domains)
-        """
-        super(MdDartsSparceLayerChoice, self).__init__()
-        self.name = layer_choice.label
-        self.op_choices = nn.ModuleDict(OrderedDict([(name, layer_choice[name]) for name in layer_choice.names]))
-        self.domain_to_name = domain_to_name
-
-    def forward(self, inputs, domain_idx: int):
-        output = self.op_choices[self.domain_to_name[domain_idx]](inputs, domain_idx)
-        return output
-
-
-class MdDartsSparceInputChoice(nn.Module):
-    def __init__(self, input_choice, domain_to_chosen: List[List[int]]):
-        """
-        param: input_choice: input choice
-        param: domain_to_chosen: list of chosen indices for each domain
-        """
-        super(MdDartsSparceInputChoice, self).__init__()
-        self.name = input_choice.label
-        self.n_chosen = input_choice.n_chosen or 1
-        assert len(domain_to_chosen[0]) == self.n_chosen
-        self.domain_to_chosen = domain_to_chosen
-
-    def forward(self, inputs, domain_idx: int):
-        inputs = torch.stack(inputs)
-        output = inputs[self.domain_to_chosen[domain_idx]].mean(dim=0)
-        return output
+from models.sparce_md_darts import SparceMdDartsModel
+import numpy as np
 
 
 class MdDartsRetrainer(DartsTrainer):
@@ -82,24 +47,6 @@ class MdDartsRetrainer(DartsTrainer):
 
         self.model.to(self.device)
 
-        # initialize sparce model
-        def apply_layer_choice(m):
-            for name, child in m.named_children():
-                if isinstance(child, LayerChoice):
-                    setattr(m, name, MdDartsSparceLayerChoice(child, [a[child.key] for a in self.architectures]))
-                else:
-                    apply_layer_choice(child)
-
-        def apply_input_choice(m):
-            for name, child in m.named_children():
-                if isinstance(child, InputChoice):
-                    setattr(m, name, MdDartsSparceInputChoice(child, [a[child.key] for a in self.architectures]))
-                else:
-                    apply_input_choice(child)
-
-        apply_layer_choice(self.model)
-        apply_input_choice(self.model)
-
         self.model_optim = optimizer
         self.lr_scheduler = lr_scheduler
         self.grad_clip = grad_clip
@@ -115,7 +62,8 @@ class MdDartsRetrainer(DartsTrainer):
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
-            indices = list(range(n_train))
+            np.random.seed(0)
+            indices = np.random.permutation(np.arange(n_train))
             train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
             valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,
@@ -166,6 +114,7 @@ class MdDartsRetrainer(DartsTrainer):
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
                 trn_meters[domain_idx].update(metrics)
+                self.writer.add_scalar(f'Acc/train_{domain_idx}', metrics['acc1'], self._step_num)
 
                 # validate
                 self.model.eval()
@@ -176,8 +125,9 @@ class MdDartsRetrainer(DartsTrainer):
                     metrics = self.metrics(logits, val_y)
                     metrics['loss'] = loss.item() / self.p[domain_idx]
                     val_meters[domain_idx].update(metrics)
+                    self.writer.add_scalar(f'Acc/val_{domain_idx}', metrics['acc1'], self._step_num)
                     # update p[domain_idx] using validation loss
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.01)
+                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.0)
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
                     self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
@@ -205,23 +155,13 @@ if __name__ == "__main__":
     parser.add_argument("--config", default='md_main_retrain.cfg')
     args = parser.parse_args()
 
-    config = ConfigObj(os.path.join('configs', args.config))
-    # print(config)
-    # print(config['datasets'].split(';'))
+    config = ConfigObj(args.config)
 
-    datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
-                                                          int(config['darts']['input_size']),
-                                                          int(config['darts']['input_channels']))
-    # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
+    datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
+                                                           int(config['darts']['input_size']),
+                                                           int(config['darts']['input_channels']))
 
-    model = CNN(int(config['darts']['input_size']),
-                int(config['darts']['input_channels']),
-                int(config['darts']['channels']),
-                int(config['darts']['n_classes']),
-                int(config['darts']['layers']),
-                n_heads=len(datasets_train),
-                n_nodes=int(config['darts']['n_nodes']),
-                stem_multiplier=int(config['darts']['stem_multiplier']))
+    model = SparceMdDartsModel(config)
     criterion = nn.CrossEntropyLoss()
 
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),

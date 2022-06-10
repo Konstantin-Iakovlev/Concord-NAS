@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -176,7 +177,8 @@ class MdDartsTrainer(DartsTrainer):
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
-            indices = list(range(n_train))
+            np.random.seed(0)
+            indices = np.random.permutation(np.arange(n_train))
             train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
             valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,
@@ -235,6 +237,7 @@ class MdDartsTrainer(DartsTrainer):
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
                 trn_meters[domain_idx].update(metrics)
+                self.writer.add_scalar(f'Acc/train_{domain_idx}', metrics['acc1'], self._step_num)
 
                 # validate
                 self.model.eval()
@@ -245,8 +248,9 @@ class MdDartsTrainer(DartsTrainer):
                     metrics = self.metrics(logits, val_y)
                     metrics['loss'] = loss.item() / self.p[domain_idx]
                     val_meters[domain_idx].update(metrics)
+                    self.writer.add_scalar(f'Acc/val_{domain_idx}', metrics['acc1'], self._step_num)
                     # update p[domain_idx] using validation loss
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.01)
+                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.0)
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
                     self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',

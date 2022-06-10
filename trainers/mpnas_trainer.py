@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -52,7 +53,8 @@ class MPNASTrainer:
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
-            indices = list(range(n_train))
+            np.random.seed(0)
+            indices = np.random.permutation(np.arange(n_train))
             train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
             valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,

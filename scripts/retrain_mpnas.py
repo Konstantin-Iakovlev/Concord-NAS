@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 
+import numpy as np
 import torch
 import torch.nn as nn
 from configobj import ConfigObj
@@ -59,7 +60,8 @@ class MPNASRetrainer:
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
-            indices = list(range(n_train))
+            np.random.seed(0)
+            indices = np.random.permutation(np.arange(n_train))
             train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
             valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,
@@ -149,12 +151,10 @@ if __name__ == "__main__":
 
     config = ConfigObj(os.path.join('configs', args.config))
     print(config)
-    # print(config['datasets'].split(';'))
 
-    datasets_train, datasets_valid = datasets.get_dataset(config['datasets'].split(';'),
-                                                          int(config['mpnas']['input_size']),
-                                                          int(config['mpnas']['input_channels']))
-    # print(datasets_train[1][0][0].shape, datasets_train[0][0][0].shape)
+    datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
+                                                           int(config['mpnas']['input_size']),
+                                                           int(config['mpnas']['input_channels']))
 
     model = MPNAS(int(config['mpnas']['input_size']),
                   int(config['mpnas']['input_channels']),
