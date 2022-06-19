@@ -149,7 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", default='mpnas_basic_retrain.cfg')
     args = parser.parse_args()
 
-    config = ConfigObj(os.path.join('configs', args.config))
+    config = ConfigObj(args.config)
     print(config)
 
     datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
