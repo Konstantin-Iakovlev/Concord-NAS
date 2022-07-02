@@ -39,7 +39,8 @@ if __name__ == "__main__":
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
                             momentum=float(config['darts']['optim']['w_momentum']),
                             weight_decay=float(config['darts']['optim']['w_weight_decay']))
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.025)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']),
+                                                              eta_min=float(config['darts']['optim']['w_lr_min']))
     trainer = MdDartsTrainer(config['folder_name'],
                              model,
                              loss=criterion,
@@ -50,15 +51,18 @@ if __name__ == "__main__":
                              datasets=datasets_train,
                              seed=int(config['seed']),
                              concord_coeff=float(config['darts']['concord_coeff']),
+                             contrastive_coeff=float(config['darts']['contrastive_coeff']),
                              batch_size=int(config['batch_size']),
                              log_frequency=int(config['log_frequency']),
                              arc_learning_rate=float(config['darts']['optim']['alpha_lr']),
                              arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
                              unrolled=eval(config['darts']['unrolled']),
+                             eta_lr=float(config['darts']['optim']['eta_lr']),
                              betas=(float(config['darts']['optim']['alpha_beta_1']),
                                     float(config['darts']['optim']['alpha_beta_2'])),
                              sampling_mode=config['darts']['sampling_mode'],
-                             t=float(config['darts']['initial_temp'])
+                             t=float(config['darts']['initial_temp']),
+                             delta_t=float(config['darts']['delta_t'])
                              )
     print('Trainer initialized')
     print('---' * 20)

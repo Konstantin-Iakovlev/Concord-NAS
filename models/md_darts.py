@@ -1,7 +1,5 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
-
 from collections import OrderedDict
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -71,12 +69,12 @@ class Node(nn.Module):
         out = [self.drop_path(o) if o is not None else None for o in out]
         return self.input_switch(out, domain_idx)
 
-    def _concord_loss(self):
+    def concord_loss(self):
         assert isinstance(self.input_switch, DartsInputChoice)
-        concord_loss = self.input_switch._concord_loss()
+        concord_loss = self.input_switch.concord_loss()
         for op in self.ops:
             assert isinstance(op, DartsLayerChoice)
-            concord_loss += op._concord_loss()
+            concord_loss += op.concord_loss()
         return concord_loss
 
 
@@ -114,8 +112,8 @@ class Cell(nn.Module):
         output = torch.cat(tensors[2:], dim=1)
         return output
 
-    def _concord_loss(self):
-        return sum([node._concord_loss() for node in self.mutable_ops])
+    def concord_loss(self):
+        return sum([node.concord_loss() for node in self.mutable_ops])
 
 
 class CNN(nn.Module):
@@ -159,8 +157,9 @@ class CNN(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
 
-    def forward(self, x, domain_idx):
+    def forward(self, x: torch.Tensor, domain_idx: int) -> Dict[str, torch.Tensor]:
         s0 = s1 = self.stem_bn[domain_idx](self.stem(x))
+        cell_out_dict = {'hidden_states': [], 'aux_logits': None}
 
         aux_logits = None
         for i, cell in enumerate(self.cells):
@@ -168,20 +167,21 @@ class CNN(nn.Module):
             s0, s1 = s1, cell(s0, s1, domain_idx)
             if i == self.aux_pos and self.training:
                 aux_logits = self.aux_head[domain_idx](s1)
+            cell_out_dict['hidden_states'].append(s1)
 
         out = self.gap(s1)
         out = out.view(out.size(0), -1)  # flatten
         logits = self.linear[domain_idx](out)
 
-        if aux_logits is not None:
-            return logits, aux_logits
-        return logits
+        cell_out_dict['aux_logits'] = aux_logits
+        cell_out_dict['logits'] = logits
+        return cell_out_dict
 
-    def drop_path_prob(self, p):
+    def drop_path_prob(self, p: float):
         for module in self.modules():
             if isinstance(module, ops.DropPath):
                 module.p = p
 
-    def _concord_loss(self):
+    def concord_loss(self):
         for cell in self.cells:
-            return cell._concord_loss()
+            return cell.concord_loss()

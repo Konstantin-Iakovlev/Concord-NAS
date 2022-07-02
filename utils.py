@@ -1,5 +1,3 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT license.
 import os
 import torch
 
@@ -57,3 +55,22 @@ def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):
     m_distr = torch.distributions.Categorical(probs=0.5 * (pr_1 + pr_2))
     return 0.5 * torch.distributions.kl.kl_divergence(p_distr, m_distr) + \
            0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
+
+
+def contrastive_loss(hidden_1: torch.Tensor, hidden_2: torch.Tensor, tau: float = 1.0):
+    """
+    Computes contrastive loss. Positive pairs are aligned in the 0-th dimension
+    :param: hidden_1: tensor of shape (batch_size, *)
+    :param: hidden_2: tensor of shape (batch_size, *)
+    :param: tau: temperature
+    :returns: averaged by batch contrastive loss
+    """
+    assert hidden_1.shape == hidden_2.shape
+    sim_matrix = hidden_1.view(hidden_1.shape[0], -1) @ hidden_2.view(hidden_2.shape[0], -1).transpose(-1, -2)
+    norm_matrix = torch.outer(hidden_1.view(hidden_1.shape[0], -1).norm(dim=-1),
+                              hidden_2.view(hidden_2.shape[0], -1).norm(dim=-1)) + \
+                  torch.tensor(1e-8).to(hidden_1.device)
+    sim_matrix /= norm_matrix
+    sim_matrix = torch.exp(sim_matrix / tau)
+    pos_pairs = torch.diag(sim_matrix)
+    return -torch.log(pos_pairs / (sim_matrix.sum(-1) - pos_pairs)).mean()

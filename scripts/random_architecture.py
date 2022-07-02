@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument("--n_nodes", type=int, default=4)
     parser.add_argument("--n_domains", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--save-dir", default='random_architecture.json')
+    parser.add_argument("--save-dir", default='.')
     args = parser.parse_args()
     np.random.seed(args.seed)
     architecture = [get_random_reduce_architecture(args.n_nodes) for _ in range(args.n_domains)]

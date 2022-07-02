@@ -21,7 +21,7 @@ import numpy as np
 
 class MdDartsRetrainer(DartsTrainer):
     def __init__(self, arch_path: str, folder_name, model, loss, metrics, optimizer, lr_scheduler,
-                 num_epochs, datasets, seed=0, grad_clip=5.,
+                 num_epochs, datasets, seed=0, grad_clip=5., eta_lr=0.01,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
                  ):
@@ -31,6 +31,7 @@ class MdDartsRetrainer(DartsTrainer):
         self.metrics = metrics
         self.num_epochs = num_epochs
         self.datasets = datasets
+        self.eta_lr = eta_lr
         self.batch_size = batch_size
         self.workers = workers
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') \
@@ -127,7 +128,7 @@ class MdDartsRetrainer(DartsTrainer):
                     val_meters[domain_idx].update(metrics)
                     self.writer.add_scalar(f'Acc/val_{domain_idx}', metrics['acc1'], self._step_num)
                     # update p[domain_idx] using validation loss
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.0)
+                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * self.eta_lr)
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
                     self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
@@ -167,8 +168,8 @@ if __name__ == "__main__":
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
                             momentum=float(config['darts']['optim']['w_momentum']),
                             weight_decay=float(config['darts']['optim']['w_weight_decay']))
-    # TODO: adjust scheduler
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']), eta_min=0.025)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']),
+                                                              eta_min=float(config['darts']['optim']['w_lr_min']))
 
     trainer = MdDartsRetrainer(config['architecture_path'],
                                config['folder_name'],
@@ -179,6 +180,7 @@ if __name__ == "__main__":
                                lr_scheduler=lr_scheduler,
                                num_epochs=int(config['epochs']),
                                datasets=datasets_train,
+                               eta_lr=config['darts']['optim']['eta_lr'],
                                seed=int(config['seed']),
                                batch_size=int(config['batch_size']),
                                log_frequency=int(config['log_frequency']),

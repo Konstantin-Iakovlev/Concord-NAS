@@ -9,7 +9,7 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
     DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
     replace_layer_choice, replace_input_choice, to_device
-from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence
+from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence, contrastive_loss
 
 
 class MdDartsLayerChoice(DartsLayerChoice):
@@ -48,14 +48,15 @@ class MdDartsLayerChoice(DartsLayerChoice):
         alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 1)
         return torch.sum(op_results * weights.view(*alpha_shape), 0)
 
-    def _concord_loss(self):
+    def concord_loss(self):
+        # TODO: try to use "linear" regularizer instead of quadratic
         loss = torch.tensor(0.0).to(self.alpha[0].device)
         if len(self.alpha) == 1:
             return loss
         for i in range(len(self.alpha)):
             for j in range(i + 1, len(self.alpha)):
-                loss = js_divergence(self.alpha[i].softmax(dim=0),
-                                     self.alpha[j].softmax(dim=0))
+                loss += js_divergence(self.alpha[i].softmax(dim=0),
+                                      self.alpha[j].softmax(dim=0))
         return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
 
     def export(self, domain_idx: int):
@@ -89,7 +90,7 @@ class MdDartsInputChoice(DartsInputChoice):
             ).sample()
             return torch.sum(inputs * weights.view(*alpha_shape), 0)
 
-    def _concord_loss(self):
+    def concord_loss(self):
         loss = torch.tensor(0.0).to(self.alpha[0].device)
         if len(self.alpha) == 1:
             return loss
@@ -106,12 +107,14 @@ class MdDartsInputChoice(DartsInputChoice):
 
 class MdDartsTrainer(DartsTrainer):
     def __init__(self, folder_name, model, loss, metrics, optimizer, lr_scheduler,
-                 num_epochs, datasets, seed=0, concord_coeff=0.0, grad_clip=5.,
+                 num_epochs, datasets, seed=0, concord_coeff=0.0, contrastive_coeff=0.0, grad_clip=5.,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
                  arc_learning_rate=3.0E-4, betas=(0.5, 0.999),
                  arc_weight_decay=1e-3, unrolled=False,
-                 sampling_mode='softmax', t=1.0
+                 eta_lr=0.01,
+                 sampling_mode='softmax', t=1.0,
+                 delta_t=-0.026
                  ):
         self.model = model
         self.loss = loss
@@ -123,6 +126,8 @@ class MdDartsTrainer(DartsTrainer):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') \
             if device is None else device
         self.concord_coeff = torch.tensor(concord_coeff).to(self.device)
+        self.contrastive_coeff = torch.tensor(contrastive_coeff).to(self.device)
+        self.eta_lr = eta_lr
         self.log_frequency = log_frequency
         self._ckpt_dir = os.path.join('searchs', folder_name)
         self._seed = seed
@@ -167,6 +172,8 @@ class MdDartsTrainer(DartsTrainer):
                                            weight_decay=arc_weight_decay)
         self.unrolled = unrolled
         self.grad_clip = grad_clip
+        self.t = t
+        self.delta_t = delta_t
 
         self._init_dataloaders()
 
@@ -192,9 +199,17 @@ class MdDartsTrainer(DartsTrainer):
 
     def _logits_and_loss(self, X, y):
         domain_idx = self.curr_domain
+        model_out = self.model(X, domain_idx)
+        logits = model_out['logits']
+        hidden_1_list = model_out['hidden_states']
+        loss = self.loss(logits, y) + self.concord_coeff * self.model.concord_loss()
+        # contrastive loss
+        if len(self.datasets) > 1:
+            another_domain_idx = np.random.choice(list(set(range(len(self.datasets))) - {domain_idx}))
+            hidden_2_list = self.model(X, another_domain_idx)['hidden_states']
+            loss += self.contrastive_coeff * sum([contrastive_loss(h1, h2, self.t)
+                                                  for h1, h2 in zip(hidden_1_list, hidden_2_list)]) / len(hidden_1_list)
 
-        logits = self.model(X, domain_idx)
-        loss = self.loss(logits, y) + self.concord_coeff * self.model._concord_loss()
         return logits, loss * self.p[domain_idx]
 
     def _train_one_epoch(self, epoch):
@@ -250,7 +265,7 @@ class MdDartsTrainer(DartsTrainer):
                     val_meters[domain_idx].update(metrics)
                     self.writer.add_scalar(f'Acc/val_{domain_idx}', metrics['acc1'], self._step_num)
                     # update p[domain_idx] using validation loss
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * 0.0)
+                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * self.eta_lr)
 
                 if self.log_frequency is not None and step % self.log_frequency == 0:
                     self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
@@ -270,6 +285,11 @@ class MdDartsTrainer(DartsTrainer):
             self._step_num += 1
 
         self.lr_scheduler.step()
+        # update temperature
+        self.t += self.delta_t
+        for m in self.nas_modules:
+            if hasattr(m, 't'):
+                m.t = max(0.2, self.t)
         save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
                         self.model_optim.state_dict(), self.ctrl_optim.state_dict())
 
