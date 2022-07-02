@@ -10,6 +10,7 @@ from configobj import ConfigObj
 os.environ['PYTHONPATH'] = '.'
 os.mkdir('searchs')
 os.mkdir('retrain')
+os.system('pip install requirements.txt')
 
 ds_list = ['MNIST-0', 'MNIST-90', 'MNIST-180', 'MNIST-270']
 
