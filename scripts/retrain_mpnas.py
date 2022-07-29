@@ -154,7 +154,8 @@ if __name__ == "__main__":
 
     datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
                                                            int(config['mpnas']['input_size']),
-                                                           int(config['mpnas']['input_channels']))
+                                                           int(config['mpnas']['input_channels']),
+                                                           int(config['cutout_length']))
 
     model = MPNAS(int(config['mpnas']['input_size']),
                   int(config['mpnas']['input_channels']),

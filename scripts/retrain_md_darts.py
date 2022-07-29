@@ -20,10 +20,11 @@ import numpy as np
 
 
 class MdDartsRetrainer(DartsTrainer):
-    def __init__(self, arch_path: str, folder_name, model, loss, metrics, optimizer, lr_scheduler,
+    def __init__(self, arch_path: str, folder_name, model: SparceMdDartsModel, loss, metrics, optimizer, lr_scheduler,
                  num_epochs, datasets, seed=0, grad_clip=5., eta_lr=0.01,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
+                 drop_path_proba_delta=0.0,
                  ):
         self.architectures = json.loads(open(arch_path).read())
         self.model = model
@@ -55,6 +56,7 @@ class MdDartsRetrainer(DartsTrainer):
         self.p = torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
 
         self._init_dataloaders()
+        self.drop_path_proba_delta = drop_path_proba_delta
 
     def _init_dataloaders(self):
         self.train_loaders = []
@@ -147,6 +149,8 @@ class MdDartsRetrainer(DartsTrainer):
             self._step_num += 1
 
         self.lr_scheduler.step()
+        # update drop path proba
+        self.model.model.set_drop_path_proba(self.model.model.get_drop_path_proba() + self.drop_path_proba_delta)
         save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
                         self.model_optim.state_dict(), None)
 
@@ -160,7 +164,8 @@ if __name__ == "__main__":
 
     datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
                                                            int(config['darts']['input_size']),
-                                                           int(config['darts']['input_channels']))
+                                                           int(config['darts']['input_channels']),
+                                                           int(config['cutout_length']))
 
     model = SparceMdDartsModel(config)
     criterion = nn.CrossEntropyLoss()
@@ -184,6 +189,7 @@ if __name__ == "__main__":
                                seed=int(config['seed']),
                                batch_size=int(config['batch_size']),
                                log_frequency=int(config['log_frequency']),
+                               drop_path_proba_delta=float(config['darts']['drop_path_proba_delta'])
                                )
     print('Trainer initialized')
     print('---' * 20)

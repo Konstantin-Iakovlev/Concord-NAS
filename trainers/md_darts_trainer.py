@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,6 +11,7 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
     DartsInputChoice, DartsTrainer
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
     replace_layer_choice, replace_input_choice, to_device
+
 from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence, contrastive_loss
 
 
@@ -26,11 +29,6 @@ class MdDartsLayerChoice(DartsLayerChoice):
         delattr(self, 'alpha')
         self.alpha = nn.ParameterList([nn.Parameter(torch.randn(len(self.op_choices)) * 1e-3)
                                        for _ in range(num_domains)])
-        self.op_param_num = []
-        for op in self.op_choices.values():
-            self.op_param_num.append(sum([torch.prod(torch.tensor(p.size())).item() \
-                                          for p in op.parameters()]))
-        self.op_param_num = nn.Parameter(torch.tensor(self.op_param_num), requires_grad=False)
 
     def forward(self, inputs, domain_idx: int):
         """
@@ -114,7 +112,8 @@ class MdDartsTrainer(DartsTrainer):
                  arc_weight_decay=1e-3, unrolled=False,
                  eta_lr=0.01,
                  sampling_mode='softmax', t=1.0,
-                 delta_t=-0.026
+                 delta_t=-0.026,
+                 drop_path_proba_delta=0.0,
                  ):
         self.model = model
         self.loss = loss
@@ -174,6 +173,7 @@ class MdDartsTrainer(DartsTrainer):
         self.grad_clip = grad_clip
         self.t = t
         self.delta_t = delta_t
+        self.drop_path_proba_delta = drop_path_proba_delta
 
         self._init_dataloaders()
 
@@ -244,6 +244,7 @@ class MdDartsTrainer(DartsTrainer):
                     self._backward(val_X, val_y)
 
                 # phase 2: child network step
+                # TODO: note that contrastive loss depends on w and alpha => we may need to remove in from valid loss
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
                 self.writer.add_scalar(f'Loss/train_{domain_idx}', loss.item() / self.p[domain_idx],
                                        self._step_num)
@@ -290,6 +291,8 @@ class MdDartsTrainer(DartsTrainer):
         for m in self.nas_modules:
             if hasattr(m, 't'):
                 m.t = max(0.2, self.t)
+        # update drop path proba
+        self.model.set_drop_path_proba(self.model.get_drop_path_proba() + self.drop_path_proba_delta)
         save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
                         self.model_optim.state_dict(), self.ctrl_optim.state_dict())
 
@@ -301,3 +304,76 @@ class MdDartsTrainer(DartsTrainer):
             if name not in result:
                 result[name] = module.export(domain_idx)
         return result
+
+    def _unrolled_backward(self, trn_X, trn_y, val_X, val_y):
+        """
+        Compute unrolled loss and backward its gradients
+        """
+        backup_params = copy.deepcopy(tuple(self.model.parameters()))
+
+        # do virtual step on training data
+        lr = self.model_optim.param_groups[0]["lr"]
+        momentum = self.model_optim.param_groups[0]["momentum"]
+        weight_decay = self.model_optim.param_groups[0]["weight_decay"]
+        self._compute_virtual_model(trn_X, trn_y, lr, momentum, weight_decay)
+
+        # calculate unrolled loss on validation data
+        # keep gradients for model here for compute hessian
+        _, loss = self._logits_and_loss(val_X, val_y)
+        w_model, w_ctrl = tuple(self.model.parameters()), \
+                          tuple([p for _, c in self.nas_modules for p in c.alpha.parameters()])
+        w_grads = torch.autograd.grad(loss, w_model + w_ctrl, allow_unused=True)
+        d_model, d_ctrl = w_grads[:len(w_model)], w_grads[len(w_model):]
+
+        # compute hessian and final gradients
+        hessian = self._compute_hessian(backup_params, d_model, trn_X, trn_y)
+        with torch.no_grad():
+            for param, d, h in zip(w_ctrl, d_ctrl, hessian):
+                # gradient = dalpha - lr * hessian; accumulate gradients
+                param.grad -= d - lr * h
+
+        # restore weights
+        self._restore_weights(backup_params)
+
+    def _compute_virtual_model(self, X, y, lr, momentum, weight_decay):
+        """
+        Compute unrolled weights w`
+        """
+        # don't need zero_grad, using autograd to calculate gradients
+        _, loss = self._logits_and_loss(X, y)
+        gradients = torch.autograd.grad(loss, self.model.parameters(), allow_unused=True)
+        with torch.no_grad():
+            for w, g in zip(self.model.parameters(), gradients):
+                if g is None:
+                    g = torch.zeros_like(w)
+                m = self.model_optim.state[w].get('momentum_buffer', 0.)
+                w = w - lr * (momentum * m + g + weight_decay * w)
+
+    def _compute_hessian(self, backup_params, dw, trn_X, trn_y):
+        """
+            dw = dw` { L_val(w`, alpha) }
+            w+ = w + eps * dw
+            w- = w - eps * dw
+            hessian = (dalpha { L_trn(w+, alpha) } - dalpha { L_trn(w-, alpha) }) / (2*eps)
+            eps = 0.01 / ||dw||
+        """
+        self._restore_weights(backup_params)
+        norm = torch.cat([w.view(-1) for w in dw if w is not None]).norm()
+        eps = 0.01 / norm
+        if norm < 1E-8:
+            self._logger.warning('In computing hessian, norm is smaller than 1E-8, cause eps to be %.6f.', norm.item())
+
+        dalphas = []
+        for e in [eps, -2. * eps]:
+            # w+ = w + eps*dw`, w- = w - eps*dw`
+            with torch.no_grad():
+                for p, d in zip(self.model.parameters(), dw):
+                    if d is not None:
+                        p += e * d
+
+            _, loss = self._logits_and_loss(trn_X, trn_y)
+            dalphas.append(torch.autograd.grad(loss, [p for _, c in self.nas_modules for p in c.alpha.parameters()]))
+
+        dalpha_pos, dalpha_neg = dalphas  # dalpha { L_trn(w+) }, # dalpha { L_trn(w-) }
+        hessian = [(p - n) / (2. * eps) for p, n in zip(dalpha_pos, dalpha_neg)]
+        return hessian

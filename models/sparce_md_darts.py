@@ -52,7 +52,9 @@ class SparceMdDartsModel(nn.Module):
                          int(config['darts']['layers']),
                          n_heads=len(config['datasets'].split(';')),
                          n_nodes=int(config['darts']['n_nodes']),
-                         stem_multiplier=int(config['darts']['stem_multiplier']))
+                         stem_multiplier=int(config['darts']['stem_multiplier']),
+                         drop_path_proba=float(config['darts']['drop_path_proba_init']),
+                         )
 
         self.architectures = json.loads(open(config['architecture_path']).read())
 

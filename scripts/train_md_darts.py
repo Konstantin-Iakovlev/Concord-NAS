@@ -21,10 +21,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = ConfigObj(args.config)
+    print(config)
 
     datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
                                                            int(config['darts']['input_size']),
-                                                           int(config['darts']['input_channels']))
+                                                           int(config['darts']['input_channels']),
+                                                           int(config['cutout_length']))
 
     model = CNN(int(config['darts']['input_size']),
                 int(config['darts']['input_channels']),
@@ -33,7 +35,8 @@ if __name__ == "__main__":
                 int(config['darts']['layers']),
                 n_heads=len(datasets_train),
                 n_nodes=int(config['darts']['n_nodes']),
-                stem_multiplier=int(config['darts']['stem_multiplier']))
+                stem_multiplier=int(config['darts']['stem_multiplier']),
+                drop_path_proba=float(config['darts']['drop_path_proba_init']))
     criterion = nn.CrossEntropyLoss()
 
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
@@ -62,7 +65,8 @@ if __name__ == "__main__":
                                     float(config['darts']['optim']['alpha_beta_2'])),
                              sampling_mode=config['darts']['sampling_mode'],
                              t=float(config['darts']['initial_temp']),
-                             delta_t=float(config['darts']['delta_t'])
+                             delta_t=float(config['darts']['delta_t']),
+                             drop_path_proba_delta=float(config['darts']['drop_path_proba_delta'])
                              )
     print('Trainer initialized')
     print('---' * 20)

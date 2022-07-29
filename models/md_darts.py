@@ -118,7 +118,7 @@ class Cell(nn.Module):
 
 class CNN(nn.Module):
     def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
-                 n_nodes=4, stem_multiplier=3, auxiliary=False):
+                 n_nodes=4, stem_multiplier=3, drop_path_proba=0.0, auxiliary=False):
         super().__init__()
         self.in_channels = in_channels
         self.channels = channels
@@ -157,6 +157,8 @@ class CNN(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
 
+        self.set_drop_path_proba(drop_path_proba)
+
     def forward(self, x: torch.Tensor, domain_idx: int) -> Dict[str, torch.Tensor]:
         s0 = s1 = self.stem_bn[domain_idx](self.stem(x))
         cell_out_dict = {'hidden_states': [], 'aux_logits': None}
@@ -177,10 +179,15 @@ class CNN(nn.Module):
         cell_out_dict['logits'] = logits
         return cell_out_dict
 
-    def drop_path_prob(self, p: float):
+    def set_drop_path_proba(self, p: float):
         for module in self.modules():
             if isinstance(module, ops.DropPath):
                 module.p = p
+
+    def get_drop_path_proba(self):
+        for module in self.modules():
+            if isinstance(module, ops.DropPath):
+                return module.p
 
     def concord_loss(self):
         for cell in self.cells:

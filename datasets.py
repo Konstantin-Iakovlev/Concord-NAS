@@ -68,8 +68,8 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
         dataset_train, dataset_val
     """
     if channels == 1:
-        MEAN = [0.5]
-        STD = [0.25]
+        MEAN = [0.13066051707548254]
+        STD = [0.30810780244715075]
     else:
         MEAN = [0.49139968, 0.48215827, 0.44653124]
         STD = [0.24703233, 0.24348505, 0.26158768]
