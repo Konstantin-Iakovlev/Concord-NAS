@@ -330,6 +330,12 @@ class MdDartsTrainer(DartsTrainer):
         with torch.no_grad():
             for param, d, h in zip(w_ctrl, d_ctrl, hessian):
                 # gradient = dalpha - lr * hessian; accumulate gradients
+                if param.grad is None:
+                    param.grad = torch.zeros_like(param)
+                if d is None:
+                    d = torch.zeros_like(param)
+                if h is None:
+                    h = torch.zeros_like(param)
                 param.grad -= d - lr * h
 
         # restore weights
