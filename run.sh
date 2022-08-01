@@ -1,0 +1,15 @@
+python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4.cfg
+python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_1e-06.cfg
+python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_1e-05.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_0.0001.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_0.001.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_0.01.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_0.1.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4c_1.0.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_1e-06.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_1e-05.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_0.0001.cfg
+python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_0.001.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_0.01.cfg
+python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_0.1.cfg
+#python3 -m scripts.train_md_darts --config configs/fmnist_basic/darts4t_1.0.cfg

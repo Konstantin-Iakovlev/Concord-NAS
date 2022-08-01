@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 from torchvision import transforms
-from torchvision.datasets import CIFAR10, MNIST, SVHN
+from torchvision.datasets import CIFAR10, MNIST, SVHN, FashionMNIST
 from torchvision.transforms.functional import rotate
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, Subset
 
 from typing import Union, List
 
@@ -54,8 +54,9 @@ class Broadcast(object):
     def __call__(self, tensor):
         return tensor.broadcast_to(self.channels, *tensor.shape[1:])
 
+MINI_SUBSET = 500
 
-def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int = 0):
+def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int = 0, seed: int = 0):
     """
     Args:
         ds_name (str): dataset name
@@ -68,8 +69,12 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
         dataset_train, dataset_val
     """
     if channels == 1:
-        MEAN = [0.13066051707548254]
-        STD = [0.30810780244715075]
+        if 'MINI-FMNIST' in ds_name:
+            MEAN = [0.5]
+            STD = [0.5]
+        else:
+            MEAN = [0.13066051707548254]
+            STD = [0.30810780244715075]
     else:
         MEAN = [0.49139968, 0.48215827, 0.44653124]
         STD = [0.24703233, 0.24348505, 0.26158768]
@@ -77,6 +82,8 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
         transforms.Normalize(MEAN, STD)
     ]
     cutout = []
+    rs = np.random.RandomState(seed)
+    
     if cutout_length > 0:
         cutout.append(Cutout(cutout_length))
 
@@ -97,6 +104,16 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
                                   transform=transforms.Compose([train_transform, Rotate(angle)]))
             dataset_test = MNIST(root="./data", train=False, download=True,
                                  transform=transforms.Compose([valid_transform, Rotate(angle)]))
+        elif  sub_ds.startswith('MINI-FMNIST'):
+            angle = float(sub_ds.split('-')[-1])                        
+            dataset_train = FashionMNIST(root="./data", train=True, download=True,
+                                  transform=transforms.Compose([train_transform, Rotate(angle)]))
+            ind = list(range(len(dataset_train)))
+            rs.shuffle(ind)
+            dataset_train = Subset(dataset_train, ind[:MINI_SUBSET])                                              
+                                              
+            dataset_test = FashionMNIST(root="./data", train=False, download=True,
+                                 transform=transforms.Compose([valid_transform, Rotate(angle)]))                                   
         elif sub_ds == 'SVHN':
             dataset_train = SVHN(root="./data", split='train', download=True, transform=train_transform)
             dataset_test = SVHN(root="./data", split='test', download=True, transform=valid_transform)
@@ -107,7 +124,7 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
     return ConcatDataset(datasets_train), ConcatDataset(datasets_test)
 
 
-def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_length: int = 0):
+def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_length: int = 0, seed: int = 0):
     """
     Args:
         ds_names (List[str]):
@@ -121,7 +138,7 @@ def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_len
     train_datasets = []
     test_datasets = []
     for ds_name in ds_names:
-        train_ds, val_ds = get_dataset(ds_name, input_size, channels, cutout_length)
+        train_ds, val_ds = get_dataset(ds_name, input_size, channels, cutout_length, seed)
         train_datasets.append(train_ds)
         test_datasets.append(val_ds)
     return train_datasets, test_datasets
