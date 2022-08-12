@@ -91,7 +91,6 @@ class MdDartsRetrainer(DartsTrainer):
                             None)
             self._logger.info(f'Loaded checkpoint_{epoch}.ckp')
             return
-        self.model.train()
         trn_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         val_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         seed = self._seed + epoch
@@ -101,6 +100,7 @@ class MdDartsRetrainer(DartsTrainer):
         for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):
             self.model_optim.zero_grad()
             for domain_idx in range(len(self.datasets)):
+                self.model.train()
                 trn_X, trn_y = train_objects[domain_idx]
                 val_X, val_y = valid_objects[domain_idx]
                 trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)

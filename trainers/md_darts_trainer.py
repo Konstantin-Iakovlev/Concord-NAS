@@ -218,7 +218,6 @@ class MdDartsTrainer(DartsTrainer):
                             self.ctrl_optim)
             self._logger.info(f'Loaded checkpoint_{epoch}.ckp')
             return
-        self.model.train()
         trn_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         val_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         seed = self._seed + epoch
@@ -229,6 +228,7 @@ class MdDartsTrainer(DartsTrainer):
             self.ctrl_optim.zero_grad()
             self.model_optim.zero_grad()
             for domain_idx in range(len(self.datasets)):
+                self.model.train()
                 trn_X, trn_y = train_objects[domain_idx]
                 val_X, val_y = valid_objects[domain_idx]
                 trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
@@ -378,7 +378,8 @@ class MdDartsTrainer(DartsTrainer):
                         p += e * d
 
             _, loss = self._logits_and_loss(trn_X, trn_y)
-            dalphas.append(torch.autograd.grad(loss, [p for _, c in self.nas_modules for p in c.alpha.parameters()]))
+            dalphas.append(torch.autograd.grad(loss, [p for _, c in self.nas_modules for p in c.alpha.parameters()],
+                                               allow_unused=True))
 
         dalpha_pos, dalpha_neg = dalphas  # dalpha { L_trn(w+) }, # dalpha { L_trn(w-) }
         hessian = [(p - n) / (2. * eps) for p, n in zip(dalpha_pos, dalpha_neg)]
