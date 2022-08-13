@@ -12,7 +12,8 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
     replace_layer_choice, replace_input_choice, to_device
 
-from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence, contrastive_loss
+from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence
+from models.losses import MdTripletLoss
 
 
 class MdDartsLayerChoice(DartsLayerChoice):
@@ -126,6 +127,7 @@ class MdDartsTrainer(DartsTrainer):
             if device is None else device
         self.concord_coeff = torch.tensor(concord_coeff).to(self.device)
         self.contrastive_coeff = torch.tensor(contrastive_coeff).to(self.device)
+        self.contrastive_loss = MdTripletLoss()
         self.eta_lr = eta_lr
         self.log_frequency = log_frequency
         self._ckpt_dir = os.path.join('searchs', folder_name)
@@ -205,9 +207,8 @@ class MdDartsTrainer(DartsTrainer):
         loss = self.loss(logits, y) + self.concord_coeff * self.model.concord_loss()
         # contrastive loss
         if len(self.datasets) > 1:
-            another_domain_idx = np.random.choice(list(set(range(len(self.datasets))) - {domain_idx}))
-            hidden_2_list = self.model(X, another_domain_idx)['hidden_states']
-            loss += self.contrastive_coeff * sum([contrastive_loss(h1, h2, self.t)
+            hidden_2_list = self.model(self.another_batch['x'], self.another_domain)['hidden_states']
+            loss += self.contrastive_coeff * sum([self.contrastive_loss.forward(h1, h2, y, self.another_batch['y'])
                                                   for h1, h2 in zip(hidden_1_list, hidden_2_list)]) / len(hidden_1_list)
 
         return logits, loss * self.p[domain_idx]
@@ -234,8 +235,13 @@ class MdDartsTrainer(DartsTrainer):
                 trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
                 val_X, val_y = to_device(val_X, self.device), to_device(val_y, self.device)
 
-                # save current domain
+                # save current domain, another domain and batch from another domain
                 self.curr_domain = domain_idx
+                self.another_domain = np.random.choice(len(self.datasets))
+                an_X, an_y = train_objects[self.another_domain]
+                an_X = to_device(an_X, self.device)
+                an_y = to_device(an_y, self.device)
+                self.another_batch = {'x': an_X, 'y': an_y}
 
                 # phase 1. architecture step
                 if self.unrolled:
