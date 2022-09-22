@@ -23,10 +23,13 @@ if __name__ == "__main__":
     config = ConfigObj(args.config)
     print(config)
 
-    datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
+    datasets_train, datasets_test = datasets.get_datasets(config['datasets'].split(';'),
                                                            int(config['darts']['input_size']),
                                                            int(config['darts']['input_channels']),
-                                                           int(config['cutout_length']))
+                                                           int(config['cutout_length']),
+                                                           seed = int(config['seed']))
+                                                                      
+                                                                                                                             
 
     model = CNN(int(config['darts']['input_size']),
                 int(config['darts']['input_channels']),
@@ -50,8 +53,10 @@ if __name__ == "__main__":
                              metrics=lambda output, target: accuracy(output, target, topk=(1,)),
                              optimizer=optim,
                              lr_scheduler=lr_scheduler,
+                             workers =  0, #os.cpu_count(),
                              num_epochs=int(config['epochs']),
                              datasets=datasets_train,
+                             test_datasets=datasets_test,
                              seed=int(config['seed']),
                              concord_coeff=float(config['darts']['concord_coeff']),
                              contrastive_coeff=float(config['darts']['contrastive_coeff']),
@@ -69,9 +74,10 @@ if __name__ == "__main__":
                              drop_path_proba_delta=float(config['darts']['drop_path_proba_delta'])
                              )
     print('Trainer initialized')
-    print('---' * 20)
+    print('---' * 20)    
     trainer.fit()
-    # export architectures
+    trainer.final_eval()
+               
     architectures = []
     for i in range(len(config['datasets'].split(';'))):
         final_architecture = trainer.export(i)

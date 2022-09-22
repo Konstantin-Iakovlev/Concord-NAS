@@ -1,0 +1,130 @@
+[
+  {
+    "reduce_n2_p0": "skipconnect",
+    "reduce_n2_p1": "sepconv3x3",
+    "reduce_n3_p0": "avgpool",
+    "reduce_n3_p1": "dilconv5x5",
+    "reduce_n3_p2": "maxpool",
+    "reduce_n4_p0": "dilconv5x5",
+    "reduce_n4_p1": "avgpool",
+    "reduce_n4_p2": "avgpool",
+    "reduce_n4_p3": "dilconv3x3",
+    "reduce_n5_p0": "dilconv5x5",
+    "reduce_n5_p1": "dilconv3x3",
+    "reduce_n5_p2": "sepconv3x3",
+    "reduce_n5_p3": "avgpool",
+    "reduce_n5_p4": "sepconv3x3",
+    "reduce_n2_switch": [
+      0,
+      1
+    ],
+    "reduce_n3_switch": [
+      1,
+      2
+    ],
+    "reduce_n4_switch": [
+      0,
+      1
+    ],
+    "reduce_n5_switch": [
+      2,
+      0
+    ]
+  },
+  {
+    "reduce_n2_p0": "dilconv5x5",
+    "reduce_n2_p1": "avgpool",
+    "reduce_n3_p0": "dilconv5x5",
+    "reduce_n3_p1": "avgpool",
+    "reduce_n3_p2": "dilconv3x3",
+    "reduce_n4_p0": "sepconv5x5",
+    "reduce_n4_p1": "skipconnect",
+    "reduce_n4_p2": "maxpool",
+    "reduce_n4_p3": "sepconv5x5",
+    "reduce_n5_p0": "dilconv3x3",
+    "reduce_n5_p1": "avgpool",
+    "reduce_n5_p2": "sepconv5x5",
+    "reduce_n5_p3": "sepconv3x3",
+    "reduce_n5_p4": "dilconv5x5",
+    "reduce_n2_switch": [
+      0,
+      1
+    ],
+    "reduce_n3_switch": [
+      1,
+      2
+    ],
+    "reduce_n4_switch": [
+      2,
+      1
+    ],
+    "reduce_n5_switch": [
+      1,
+      4
+    ]
+  },
+  {
+    "reduce_n2_p0": "sepconv5x5",
+    "reduce_n2_p1": "maxpool",
+    "reduce_n3_p0": "maxpool",
+    "reduce_n3_p1": "sepconv3x3",
+    "reduce_n3_p2": "skipconnect",
+    "reduce_n4_p0": "sepconv3x3",
+    "reduce_n4_p1": "avgpool",
+    "reduce_n4_p2": "dilconv5x5",
+    "reduce_n4_p3": "dilconv3x3",
+    "reduce_n5_p0": "dilconv3x3",
+    "reduce_n5_p1": "dilconv3x3",
+    "reduce_n5_p2": "dilconv5x5",
+    "reduce_n5_p3": "skipconnect",
+    "reduce_n5_p4": "sepconv5x5",
+    "reduce_n2_switch": [
+      0,
+      1
+    ],
+    "reduce_n3_switch": [
+      1,
+      2
+    ],
+    "reduce_n4_switch": [
+      0,
+      3
+    ],
+    "reduce_n5_switch": [
+      4,
+      1
+    ]
+  },
+  {
+    "reduce_n2_p0": "dilconv5x5",
+    "reduce_n2_p1": "dilconv5x5",
+    "reduce_n3_p0": "dilconv5x5",
+    "reduce_n3_p1": "sepconv5x5",
+    "reduce_n3_p2": "dilconv5x5",
+    "reduce_n4_p0": "sepconv3x3",
+    "reduce_n4_p1": "sepconv5x5",
+    "reduce_n4_p2": "dilconv5x5",
+    "reduce_n4_p3": "sepconv3x3",
+    "reduce_n5_p0": "dilconv5x5",
+    "reduce_n5_p1": "sepconv3x3",
+    "reduce_n5_p2": "sepconv3x3",
+    "reduce_n5_p3": "sepconv5x5",
+    "reduce_n5_p4": "sepconv5x5",
+    "reduce_n2_switch": [
+      1,
+      0
+    ],
+    "reduce_n3_switch": [
+      2,
+      1
+    ],
+    "reduce_n4_switch": [
+      2,
+      1
+    ],
+    "reduce_n5_switch": [
+      2,
+      1
+    ]
+  }
+]

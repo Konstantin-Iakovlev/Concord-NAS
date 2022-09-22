@@ -28,7 +28,6 @@ class MdTripletLoss(nn.Module):
 
         hard_pos_ids = dist_matrix.masked_fill(~label_matrix, -float('inf')).argmax(-1)
         hard_neg_ids = dist_matrix.masked_fill(label_matrix, float('inf')).argmin(-1)
-
         return self.triplet_loss(h1.view(bs, -1)[valid_triples],
                                  h2.view(bs, -1)[hard_pos_ids],
                                  h2.view(bs, -1)[hard_neg_ids])

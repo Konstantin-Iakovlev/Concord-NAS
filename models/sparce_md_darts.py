@@ -62,14 +62,14 @@ class SparceMdDartsModel(nn.Module):
         def apply_layer_choice(m):
             for name, child in m.named_children():
                 if isinstance(child, LayerChoice):
-                    setattr(m, name, MdDartsSparceLayerChoice(child, [a[child.key] for a in self.architectures]))
+                    setattr(m, name, MdDartsSparceLayerChoice(child, [a[child.label] for a in self.architectures]))
                 else:
                     apply_layer_choice(child)
 
         def apply_input_choice(m):
             for name, child in m.named_children():
                 if isinstance(child, InputChoice):
-                    setattr(m, name, MdDartsSparceInputChoice(child, [a[child.key] for a in self.architectures]))
+                    setattr(m, name, MdDartsSparceInputChoice(child, [a[child.label] for a in self.architectures]))
                 else:
                     apply_input_choice(child)
 

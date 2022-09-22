@@ -1,0 +1,410 @@
+2022-09-22 20:34:51,018 - darts - INFO - Final eval (epoch: 0). Domain: 0 
+Test: acc1 0.250000 (0.106151)  loss 9.237961 (9.219697)
+2022-09-22 20:34:51,019 - darts - INFO - Final eval (epoch: 0). Domain: 1 
+Test: acc1 0.187500 (0.104167)  loss 9.190471 (9.215402)
+2022-09-22 20:34:51,019 - darts - INFO - Final eval (epoch: 0). Domain: 2 
+Test: acc1 0.000000 (0.095238)  loss 9.245344 (9.215288)
+2022-09-22 20:34:51,019 - darts - INFO - Final eval (epoch: 0). Domain: 3 
+Test: acc1 0.125000 (0.095238)  loss 9.276310 (9.212095)
+2022-09-22 20:34:51,019 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.1001984126984127
+2022-09-22 20:34:51,839 - darts - INFO - Epoch [1/100] Step [1/1], Seed:[0], Domain: 3
+Train: acc1 0.125000 (0.125000)  loss 9.251536 (9.251536)
+Valid: acc1 0.125000 (0.125000)  loss 9.153222 (9.153222)
+2022-09-22 20:34:52,742 - darts - INFO - Epoch [2/100] Step [1/1], Seed:[1], Domain: 3
+Train: acc1 0.000000 (0.000000)  loss 9.173825 (9.173825)
+Valid: acc1 0.187500 (0.187500)  loss 9.090345 (9.090345)
+2022-09-22 20:34:53,638 - darts - INFO - Epoch [3/100] Step [1/1], Seed:[2], Domain: 3
+Train: acc1 0.125000 (0.125000)  loss 9.115655 (9.115655)
+Valid: acc1 0.187500 (0.187500)  loss 9.034794 (9.034794)
+2022-09-22 20:34:54,530 - darts - INFO - Epoch [4/100] Step [1/1], Seed:[3], Domain: 3
+Train: acc1 0.125000 (0.125000)  loss 8.944666 (8.944666)
+Valid: acc1 0.187500 (0.187500)  loss 9.078565 (9.078565)
+2022-09-22 20:34:55,421 - darts - INFO - Epoch [5/100] Step [1/1], Seed:[4], Domain: 3
+Train: acc1 0.187500 (0.187500)  loss 8.841609 (8.841609)
+Valid: acc1 0.250000 (0.250000)  loss 8.981430 (8.981430)
+2022-09-22 20:34:56,318 - darts - INFO - Epoch [6/100] Step [1/1], Seed:[5], Domain: 3
+Train: acc1 0.187500 (0.187500)  loss 8.721642 (8.721642)
+Valid: acc1 0.125000 (0.125000)  loss 8.988676 (8.988676)
+2022-09-22 20:34:57,220 - darts - INFO - Epoch [7/100] Step [1/1], Seed:[6], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 8.664228 (8.664228)
+Valid: acc1 0.250000 (0.250000)  loss 8.751122 (8.751122)
+2022-09-22 20:34:58,184 - darts - INFO - Epoch [8/100] Step [1/1], Seed:[7], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 8.087667 (8.087667)
+Valid: acc1 0.187500 (0.187500)  loss 8.837709 (8.837709)
+2022-09-22 20:34:59,087 - darts - INFO - Epoch [9/100] Step [1/1], Seed:[8], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 8.226665 (8.226665)
+Valid: acc1 0.250000 (0.250000)  loss 8.738441 (8.738441)
+2022-09-22 20:34:59,980 - darts - INFO - Epoch [10/100] Step [1/1], Seed:[9], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 7.937779 (7.937779)
+Valid: acc1 0.312500 (0.312500)  loss 8.609612 (8.609612)
+2022-09-22 20:35:09,984 - darts - INFO - Final eval (epoch: 10). Domain: 0 
+Test: acc1 0.250000 (0.165675)  loss 8.916077 (9.026476)
+2022-09-22 20:35:09,984 - darts - INFO - Final eval (epoch: 10). Domain: 1 
+Test: acc1 0.187500 (0.165675)  loss 8.858822 (9.012837)
+2022-09-22 20:35:09,985 - darts - INFO - Final eval (epoch: 10). Domain: 2 
+Test: acc1 0.187500 (0.165675)  loss 9.004374 (9.029755)
+2022-09-22 20:35:09,985 - darts - INFO - Final eval (epoch: 10). Domain: 3 
+Test: acc1 0.187500 (0.155754)  loss 9.078540 (9.037397)
+2022-09-22 20:35:09,985 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.16319444444444445
+2022-09-22 20:35:10,826 - darts - INFO - Epoch [11/100] Step [1/1], Seed:[10], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 8.683255 (8.683255)
+Valid: acc1 0.250000 (0.250000)  loss 8.548484 (8.548484)
+2022-09-22 20:35:11,777 - darts - INFO - Epoch [12/100] Step [1/1], Seed:[11], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 7.529450 (7.529450)
+Valid: acc1 0.250000 (0.250000)  loss 8.343067 (8.343067)
+2022-09-22 20:35:12,731 - darts - INFO - Epoch [13/100] Step [1/1], Seed:[12], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 7.190787 (7.190787)
+Valid: acc1 0.187500 (0.187500)  loss 8.182341 (8.182341)
+2022-09-22 20:35:13,651 - darts - INFO - Epoch [14/100] Step [1/1], Seed:[13], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 7.065760 (7.065760)
+Valid: acc1 0.312500 (0.312500)  loss 8.006816 (8.006816)
+2022-09-22 20:35:14,565 - darts - INFO - Epoch [15/100] Step [1/1], Seed:[14], Domain: 3
+Train: acc1 0.375000 (0.375000)  loss 7.009185 (7.009185)
+Valid: acc1 0.250000 (0.250000)  loss 8.087381 (8.087381)
+2022-09-22 20:35:15,507 - darts - INFO - Epoch [16/100] Step [1/1], Seed:[15], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 6.939679 (6.939679)
+Valid: acc1 0.250000 (0.250000)  loss 7.988402 (7.988402)
+2022-09-22 20:35:16,488 - darts - INFO - Epoch [17/100] Step [1/1], Seed:[16], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 6.678133 (6.678133)
+Valid: acc1 0.312500 (0.312500)  loss 7.840388 (7.840388)
+2022-09-22 20:35:17,443 - darts - INFO - Epoch [18/100] Step [1/1], Seed:[17], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 6.530652 (6.530652)
+Valid: acc1 0.250000 (0.250000)  loss 7.674216 (7.674216)
+2022-09-22 20:35:18,352 - darts - INFO - Epoch [19/100] Step [1/1], Seed:[18], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 6.333610 (6.333610)
+Valid: acc1 0.312500 (0.312500)  loss 7.793757 (7.793757)
+2022-09-22 20:35:19,256 - darts - INFO - Epoch [20/100] Step [1/1], Seed:[19], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 6.461105 (6.461105)
+Valid: acc1 0.312500 (0.312500)  loss 7.724354 (7.724354)
+2022-09-22 20:35:29,045 - darts - INFO - Final eval (epoch: 20). Domain: 0 
+Test: acc1 0.062500 (0.164683)  loss 10.060998 (8.743322)
+2022-09-22 20:35:29,046 - darts - INFO - Final eval (epoch: 20). Domain: 1 
+Test: acc1 0.062500 (0.154762)  loss 9.886586 (8.810802)
+2022-09-22 20:35:29,046 - darts - INFO - Final eval (epoch: 20). Domain: 2 
+Test: acc1 0.187500 (0.156746)  loss 9.294567 (8.752501)
+2022-09-22 20:35:29,046 - darts - INFO - Final eval (epoch: 20). Domain: 3 
+Test: acc1 0.187500 (0.144841)  loss 9.150952 (8.778046)
+2022-09-22 20:35:29,046 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.1552579365079365
+2022-09-22 20:35:29,842 - darts - INFO - Epoch [21/100] Step [1/1], Seed:[20], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 6.406188 (6.406188)
+Valid: acc1 0.375000 (0.375000)  loss 7.306229 (7.306229)
+2022-09-22 20:35:30,757 - darts - INFO - Epoch [22/100] Step [1/1], Seed:[21], Domain: 3
+Train: acc1 0.375000 (0.375000)  loss 5.898010 (5.898010)
+Valid: acc1 0.312500 (0.312500)  loss 7.054723 (7.054723)
+2022-09-22 20:35:31,672 - darts - INFO - Epoch [23/100] Step [1/1], Seed:[22], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 5.743408 (5.743408)
+Valid: acc1 0.375000 (0.375000)  loss 7.036837 (7.036837)
+2022-09-22 20:35:32,581 - darts - INFO - Epoch [24/100] Step [1/1], Seed:[23], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 6.082626 (6.082626)
+Valid: acc1 0.375000 (0.375000)  loss 7.066495 (7.066495)
+2022-09-22 20:35:33,487 - darts - INFO - Epoch [25/100] Step [1/1], Seed:[24], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 5.907652 (5.907652)
+Valid: acc1 0.312500 (0.312500)  loss 6.784987 (6.784987)
+2022-09-22 20:35:34,387 - darts - INFO - Epoch [26/100] Step [1/1], Seed:[25], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 5.647561 (5.647561)
+Valid: acc1 0.250000 (0.250000)  loss 6.691118 (6.691118)
+2022-09-22 20:35:35,285 - darts - INFO - Epoch [27/100] Step [1/1], Seed:[26], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 5.492982 (5.492982)
+Valid: acc1 0.375000 (0.375000)  loss 6.698948 (6.698948)
+2022-09-22 20:35:36,186 - darts - INFO - Epoch [28/100] Step [1/1], Seed:[27], Domain: 3
+Train: acc1 0.562500 (0.562500)  loss 5.236176 (5.236176)
+Valid: acc1 0.312500 (0.312500)  loss 6.643602 (6.643602)
+2022-09-22 20:35:37,082 - darts - INFO - Epoch [29/100] Step [1/1], Seed:[28], Domain: 3
+Train: acc1 0.312500 (0.312500)  loss 5.343004 (5.343004)
+Valid: acc1 0.312500 (0.312500)  loss 6.620153 (6.620153)
+2022-09-22 20:35:38,021 - darts - INFO - Epoch [30/100] Step [1/1], Seed:[29], Domain: 3
+Train: acc1 0.375000 (0.375000)  loss 5.543926 (5.543926)
+Valid: acc1 0.500000 (0.500000)  loss 6.486997 (6.486997)
+2022-09-22 20:35:47,677 - darts - INFO - Final eval (epoch: 30). Domain: 0 
+Test: acc1 0.375000 (0.248016)  loss 7.249769 (7.629598)
+2022-09-22 20:35:47,678 - darts - INFO - Final eval (epoch: 30). Domain: 1 
+Test: acc1 0.312500 (0.240079)  loss 7.258254 (7.684428)
+2022-09-22 20:35:47,678 - darts - INFO - Final eval (epoch: 30). Domain: 2 
+Test: acc1 0.312500 (0.251984)  loss 7.366878 (7.628000)
+2022-09-22 20:35:47,678 - darts - INFO - Final eval (epoch: 30). Domain: 3 
+Test: acc1 0.375000 (0.238095)  loss 7.591782 (7.673777)
+2022-09-22 20:35:47,679 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.2445436507936508
+2022-09-22 20:35:48,451 - darts - INFO - Epoch [31/100] Step [1/1], Seed:[30], Domain: 3
+Train: acc1 0.500000 (0.500000)  loss 5.266597 (5.266597)
+Valid: acc1 0.312500 (0.312500)  loss 6.454697 (6.454697)
+2022-09-22 20:35:49,339 - darts - INFO - Epoch [32/100] Step [1/1], Seed:[31], Domain: 3
+Train: acc1 0.250000 (0.250000)  loss 5.489789 (5.489789)
+Valid: acc1 0.437500 (0.437500)  loss 6.319854 (6.319854)
+2022-09-22 20:35:50,228 - darts - INFO - Epoch [33/100] Step [1/1], Seed:[32], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 4.944079 (4.944079)
+Valid: acc1 0.375000 (0.375000)  loss 6.432741 (6.432741)
+2022-09-22 20:35:51,120 - darts - INFO - Epoch [34/100] Step [1/1], Seed:[33], Domain: 3
+Train: acc1 0.687500 (0.687500)  loss 5.256186 (5.256186)
+Valid: acc1 0.312500 (0.312500)  loss 6.426186 (6.426186)
+2022-09-22 20:35:52,072 - darts - INFO - Epoch [35/100] Step [1/1], Seed:[34], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 5.270908 (5.270908)
+Valid: acc1 0.500000 (0.500000)  loss 6.329507 (6.329507)
+2022-09-22 20:35:52,963 - darts - INFO - Epoch [36/100] Step [1/1], Seed:[35], Domain: 3
+Train: acc1 0.375000 (0.375000)  loss 4.967155 (4.967155)
+Valid: acc1 0.375000 (0.375000)  loss 6.162557 (6.162557)
+2022-09-22 20:35:53,855 - darts - INFO - Epoch [37/100] Step [1/1], Seed:[36], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 5.051149 (5.051149)
+Valid: acc1 0.437500 (0.437500)  loss 6.137130 (6.137130)
+2022-09-22 20:35:54,750 - darts - INFO - Epoch [38/100] Step [1/1], Seed:[37], Domain: 3
+Train: acc1 0.500000 (0.500000)  loss 4.906915 (4.906915)
+Valid: acc1 0.500000 (0.500000)  loss 5.939003 (5.939003)
+2022-09-22 20:35:55,643 - darts - INFO - Epoch [39/100] Step [1/1], Seed:[38], Domain: 3
+Train: acc1 0.437500 (0.437500)  loss 4.969351 (4.969351)
+Valid: acc1 0.500000 (0.500000)  loss 6.033202 (6.033202)
+2022-09-22 20:35:56,532 - darts - INFO - Epoch [40/100] Step [1/1], Seed:[39], Domain: 3
+Train: acc1 0.562500 (0.562500)  loss 4.861825 (4.861825)
+Valid: acc1 0.375000 (0.375000)  loss 5.989004 (5.989004)
+2022-09-22 20:36:05,955 - darts - INFO - Final eval (epoch: 40). Domain: 0 
+Test: acc1 0.375000 (0.256944)  loss 7.241850 (7.437112)
+2022-09-22 20:36:05,956 - darts - INFO - Final eval (epoch: 40). Domain: 1 
+Test: acc1 0.375000 (0.266865)  loss 6.873208 (7.553315)
+2022-09-22 20:36:05,956 - darts - INFO - Final eval (epoch: 40). Domain: 2 
+Test: acc1 0.375000 (0.266865)  loss 7.002584 (7.486504)
+2022-09-22 20:36:05,957 - darts - INFO - Final eval (epoch: 40). Domain: 3 
+Test: acc1 0.375000 (0.273810)  loss 7.426261 (7.614461)
+2022-09-22 20:36:05,957 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.26612103174603174
+2022-09-22 20:36:06,741 - darts - INFO - Epoch [41/100] Step [1/1], Seed:[40], Domain: 3
+Train: acc1 0.687500 (0.687500)  loss 4.575542 (4.575542)
+Valid: acc1 0.312500 (0.312500)  loss 6.106918 (6.106918)
+2022-09-22 20:36:07,644 - darts - INFO - Epoch [42/100] Step [1/1], Seed:[41], Domain: 3
+Train: acc1 0.562500 (0.562500)  loss 4.679014 (4.679014)
+Valid: acc1 0.250000 (0.250000)  loss 6.662462 (6.662462)
+2022-09-22 20:36:08,546 - darts - INFO - Epoch [43/100] Step [1/1], Seed:[42], Domain: 3
+Train: acc1 0.625000 (0.625000)  loss 4.649884 (4.649884)
+Valid: acc1 0.562500 (0.562500)  loss 5.909603 (5.909603)
+2022-09-22 20:36:09,450 - darts - INFO - Epoch [44/100] Step [1/1], Seed:[43], Domain: 3
+Train: acc1 0.750000 (0.750000)  loss 4.230346 (4.230346)
+Valid: acc1 0.437500 (0.437500)  loss 5.848610 (5.848610)
+2022-09-22 20:36:10,360 - darts - INFO - Epoch [45/100] Step [1/1], Seed:[44], Domain: 3
+Train: acc1 0.625000 (0.625000)  loss 4.420735 (4.420735)
+Valid: acc1 0.375000 (0.375000)  loss 5.972958 (5.972958)
+2022-09-22 20:36:11,268 - darts - INFO - Epoch [46/100] Step [1/1], Seed:[45], Domain: 3
+Train: acc1 0.562500 (0.562500)  loss 4.406539 (4.406539)
+Valid: acc1 0.500000 (0.500000)  loss 5.938625 (5.938625)
+2022-09-22 20:36:12,175 - darts - INFO - Epoch [47/100] Step [1/1], Seed:[46], Domain: 3
+Train: acc1 0.625000 (0.625000)  loss 4.666595 (4.666595)
+Valid: acc1 0.562500 (0.562500)  loss 6.274313 (6.274313)
+2022-09-22 20:36:13,077 - darts - INFO - Epoch [48/100] Step [1/1], Seed:[47], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.963120 (3.963120)
+Valid: acc1 0.562500 (0.562500)  loss 5.770218 (5.770218)
+2022-09-22 20:36:13,981 - darts - INFO - Epoch [49/100] Step [1/1], Seed:[48], Domain: 3
+Train: acc1 0.687500 (0.687500)  loss 4.783842 (4.783842)
+Valid: acc1 0.625000 (0.625000)  loss 5.538366 (5.538366)
+2022-09-22 20:36:14,942 - darts - INFO - Epoch [50/100] Step [1/1], Seed:[49], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 4.277888 (4.277888)
+Valid: acc1 0.437500 (0.437500)  loss 5.869216 (5.869216)
+2022-09-22 20:36:24,533 - darts - INFO - Final eval (epoch: 50). Domain: 0 
+Test: acc1 0.375000 (0.302579)  loss 6.890264 (7.384054)
+2022-09-22 20:36:24,533 - darts - INFO - Final eval (epoch: 50). Domain: 1 
+Test: acc1 0.312500 (0.308532)  loss 6.576470 (7.472468)
+2022-09-22 20:36:24,533 - darts - INFO - Final eval (epoch: 50). Domain: 2 
+Test: acc1 0.312500 (0.294643)  loss 6.787230 (7.467879)
+2022-09-22 20:36:24,534 - darts - INFO - Final eval (epoch: 50). Domain: 3 
+Test: acc1 0.312500 (0.311508)  loss 6.528907 (7.507468)
+2022-09-22 20:36:24,534 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.3043154761904762
+2022-09-22 20:36:25,319 - darts - INFO - Epoch [51/100] Step [1/1], Seed:[50], Domain: 3
+Train: acc1 0.625000 (0.625000)  loss 4.315295 (4.315295)
+Valid: acc1 0.187500 (0.187500)  loss 6.966825 (6.966825)
+2022-09-22 20:36:26,219 - darts - INFO - Epoch [52/100] Step [1/1], Seed:[51], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 4.010701 (4.010701)
+Valid: acc1 0.187500 (0.187500)  loss 8.906831 (8.906831)
+2022-09-22 20:36:27,121 - darts - INFO - Epoch [53/100] Step [1/1], Seed:[52], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.580667 (3.580667)
+Valid: acc1 0.312500 (0.312500)  loss 7.832794 (7.832794)
+2022-09-22 20:36:28,022 - darts - INFO - Epoch [54/100] Step [1/1], Seed:[53], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.916332 (3.916332)
+Valid: acc1 0.500000 (0.500000)  loss 6.522379 (6.522379)
+2022-09-22 20:36:28,922 - darts - INFO - Epoch [55/100] Step [1/1], Seed:[54], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 4.165452 (4.165452)
+Valid: acc1 0.312500 (0.312500)  loss 6.350492 (6.350492)
+2022-09-22 20:36:29,823 - darts - INFO - Epoch [56/100] Step [1/1], Seed:[55], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.567299 (3.567299)
+Valid: acc1 0.437500 (0.437500)  loss 5.682959 (5.682959)
+2022-09-22 20:36:30,725 - darts - INFO - Epoch [57/100] Step [1/1], Seed:[56], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.664891 (3.664891)
+Valid: acc1 0.500000 (0.500000)  loss 5.408158 (5.408158)
+2022-09-22 20:36:31,626 - darts - INFO - Epoch [58/100] Step [1/1], Seed:[57], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.386061 (3.386061)
+Valid: acc1 0.500000 (0.500000)  loss 5.332828 (5.332828)
+2022-09-22 20:36:32,527 - darts - INFO - Epoch [59/100] Step [1/1], Seed:[58], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.495474 (3.495474)
+Valid: acc1 0.500000 (0.500000)  loss 5.537465 (5.537465)
+2022-09-22 20:36:33,428 - darts - INFO - Epoch [60/100] Step [1/1], Seed:[59], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.422550 (3.422550)
+Valid: acc1 0.500000 (0.500000)  loss 5.983131 (5.983131)
+2022-09-22 20:36:43,036 - darts - INFO - Final eval (epoch: 60). Domain: 0 
+Test: acc1 0.375000 (0.305556)  loss 6.846472 (7.565300)
+2022-09-22 20:36:43,037 - darts - INFO - Final eval (epoch: 60). Domain: 1 
+Test: acc1 0.312500 (0.307540)  loss 6.786672 (7.920256)
+2022-09-22 20:36:43,037 - darts - INFO - Final eval (epoch: 60). Domain: 2 
+Test: acc1 0.312500 (0.287698)  loss 6.567911 (7.784213)
+2022-09-22 20:36:43,037 - darts - INFO - Final eval (epoch: 60). Domain: 3 
+Test: acc1 0.312500 (0.309524)  loss 6.178266 (7.774593)
+2022-09-22 20:36:43,038 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.3025793650793651
+2022-09-22 20:36:43,820 - darts - INFO - Epoch [61/100] Step [1/1], Seed:[60], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.749958 (3.749958)
+Valid: acc1 0.562500 (0.562500)  loss 5.514300 (5.514300)
+2022-09-22 20:36:44,722 - darts - INFO - Epoch [62/100] Step [1/1], Seed:[61], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.242064 (3.242064)
+Valid: acc1 0.187500 (0.187500)  loss 8.440790 (8.440790)
+2022-09-22 20:36:45,625 - darts - INFO - Epoch [63/100] Step [1/1], Seed:[62], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 4.021574 (4.021574)
+Valid: acc1 0.375000 (0.375000)  loss 5.730987 (5.730987)
+2022-09-22 20:36:46,587 - darts - INFO - Epoch [64/100] Step [1/1], Seed:[63], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.331564 (3.331564)
+Valid: acc1 0.562500 (0.562500)  loss 5.500942 (5.500942)
+2022-09-22 20:36:47,487 - darts - INFO - Epoch [65/100] Step [1/1], Seed:[64], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.364434 (3.364434)
+Valid: acc1 0.500000 (0.500000)  loss 5.528030 (5.528030)
+2022-09-22 20:36:48,389 - darts - INFO - Epoch [66/100] Step [1/1], Seed:[65], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.493957 (3.493957)
+Valid: acc1 0.375000 (0.375000)  loss 6.396226 (6.396226)
+2022-09-22 20:36:49,292 - darts - INFO - Epoch [67/100] Step [1/1], Seed:[66], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.517882 (3.517882)
+Valid: acc1 0.500000 (0.500000)  loss 6.041236 (6.041236)
+2022-09-22 20:36:50,194 - darts - INFO - Epoch [68/100] Step [1/1], Seed:[67], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.114134 (3.114134)
+Valid: acc1 0.562500 (0.562500)  loss 5.305404 (5.305404)
+2022-09-22 20:36:51,099 - darts - INFO - Epoch [69/100] Step [1/1], Seed:[68], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.000004 (3.000004)
+Valid: acc1 0.437500 (0.437500)  loss 5.050853 (5.050853)
+2022-09-22 20:36:52,004 - darts - INFO - Epoch [70/100] Step [1/1], Seed:[69], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.561766 (3.561766)
+Valid: acc1 0.437500 (0.437500)  loss 5.241534 (5.241534)
+2022-09-22 20:37:01,630 - darts - INFO - Final eval (epoch: 70). Domain: 0 
+Test: acc1 0.437500 (0.372024)  loss 6.967429 (7.093977)
+2022-09-22 20:37:01,631 - darts - INFO - Final eval (epoch: 70). Domain: 1 
+Test: acc1 0.375000 (0.356151)  loss 6.638236 (7.222254)
+2022-09-22 20:37:01,631 - darts - INFO - Final eval (epoch: 70). Domain: 2 
+Test: acc1 0.375000 (0.363095)  loss 6.429577 (7.282364)
+2022-09-22 20:37:01,632 - darts - INFO - Final eval (epoch: 70). Domain: 3 
+Test: acc1 0.375000 (0.349206)  loss 6.157522 (7.433176)
+2022-09-22 20:37:01,632 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.36011904761904767
+2022-09-22 20:37:02,417 - darts - INFO - Epoch [71/100] Step [1/1], Seed:[70], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.584395 (3.584395)
+Valid: acc1 0.562500 (0.562500)  loss 5.016871 (5.016871)
+2022-09-22 20:37:03,322 - darts - INFO - Epoch [72/100] Step [1/1], Seed:[71], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.883393 (2.883393)
+Valid: acc1 0.500000 (0.500000)  loss 5.120867 (5.120867)
+2022-09-22 20:37:04,225 - darts - INFO - Epoch [73/100] Step [1/1], Seed:[72], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.491369 (3.491369)
+Valid: acc1 0.312500 (0.312500)  loss 6.344105 (6.344105)
+2022-09-22 20:37:05,131 - darts - INFO - Epoch [74/100] Step [1/1], Seed:[73], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.039964 (3.039964)
+Valid: acc1 0.562500 (0.562500)  loss 5.299269 (5.299269)
+2022-09-22 20:37:06,035 - darts - INFO - Epoch [75/100] Step [1/1], Seed:[74], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 2.856636 (2.856636)
+Valid: acc1 0.500000 (0.500000)  loss 4.761621 (4.761621)
+2022-09-22 20:37:06,938 - darts - INFO - Epoch [76/100] Step [1/1], Seed:[75], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.269399 (3.269399)
+Valid: acc1 0.625000 (0.625000)  loss 4.688968 (4.688968)
+2022-09-22 20:37:07,899 - darts - INFO - Epoch [77/100] Step [1/1], Seed:[76], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.481136 (2.481136)
+Valid: acc1 0.500000 (0.500000)  loss 5.143917 (5.143917)
+2022-09-22 20:37:08,802 - darts - INFO - Epoch [78/100] Step [1/1], Seed:[77], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.543247 (2.543247)
+Valid: acc1 0.437500 (0.437500)  loss 5.367566 (5.367566)
+2022-09-22 20:37:09,706 - darts - INFO - Epoch [79/100] Step [1/1], Seed:[78], Domain: 3
+Train: acc1 1.000000 (1.000000)  loss 2.649353 (2.649353)
+Valid: acc1 0.625000 (0.625000)  loss 4.726567 (4.726567)
+2022-09-22 20:37:10,608 - darts - INFO - Epoch [80/100] Step [1/1], Seed:[79], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.721227 (2.721227)
+Valid: acc1 0.625000 (0.625000)  loss 4.797307 (4.797307)
+2022-09-22 20:37:20,231 - darts - INFO - Final eval (epoch: 80). Domain: 0 
+Test: acc1 0.437500 (0.393849)  loss 7.103357 (6.926281)
+2022-09-22 20:37:20,231 - darts - INFO - Final eval (epoch: 80). Domain: 1 
+Test: acc1 0.437500 (0.381944)  loss 6.875349 (7.001266)
+2022-09-22 20:37:20,231 - darts - INFO - Final eval (epoch: 80). Domain: 2 
+Test: acc1 0.437500 (0.393849)  loss 6.460239 (6.961678)
+2022-09-22 20:37:20,232 - darts - INFO - Final eval (epoch: 80). Domain: 3 
+Test: acc1 0.375000 (0.388889)  loss 6.377066 (6.984614)
+2022-09-22 20:37:20,232 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.38963293650793646
+2022-09-22 20:37:21,017 - darts - INFO - Epoch [81/100] Step [1/1], Seed:[80], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 2.418004 (2.418004)
+Valid: acc1 0.750000 (0.750000)  loss 4.557501 (4.557501)
+2022-09-22 20:37:21,921 - darts - INFO - Epoch [82/100] Step [1/1], Seed:[81], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.180933 (3.180933)
+Valid: acc1 0.562500 (0.562500)  loss 5.124519 (5.124519)
+2022-09-22 20:37:22,824 - darts - INFO - Epoch [83/100] Step [1/1], Seed:[82], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.148435 (3.148435)
+Valid: acc1 0.625000 (0.625000)  loss 4.421952 (4.421952)
+2022-09-22 20:37:23,727 - darts - INFO - Epoch [84/100] Step [1/1], Seed:[83], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 2.729114 (2.729114)
+Valid: acc1 0.625000 (0.625000)  loss 4.676135 (4.676135)
+2022-09-22 20:37:24,629 - darts - INFO - Epoch [85/100] Step [1/1], Seed:[84], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.937837 (2.937837)
+Valid: acc1 0.562500 (0.562500)  loss 5.089710 (5.089710)
+2022-09-22 20:37:25,535 - darts - INFO - Epoch [86/100] Step [1/1], Seed:[85], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 2.857384 (2.857384)
+Valid: acc1 0.500000 (0.500000)  loss 4.936756 (4.936756)
+2022-09-22 20:37:26,438 - darts - INFO - Epoch [87/100] Step [1/1], Seed:[86], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.950110 (2.950110)
+Valid: acc1 0.562500 (0.562500)  loss 4.837518 (4.837518)
+2022-09-22 20:37:27,341 - darts - INFO - Epoch [88/100] Step [1/1], Seed:[87], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.041578 (3.041578)
+Valid: acc1 0.750000 (0.750000)  loss 4.667306 (4.667306)
+2022-09-22 20:37:28,245 - darts - INFO - Epoch [89/100] Step [1/1], Seed:[88], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.766007 (2.766007)
+Valid: acc1 0.500000 (0.500000)  loss 4.919399 (4.919399)
+2022-09-22 20:37:29,205 - darts - INFO - Epoch [90/100] Step [1/1], Seed:[89], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 2.984108 (2.984108)
+Valid: acc1 0.562500 (0.562500)  loss 4.434678 (4.434678)
+2022-09-22 20:37:38,841 - darts - INFO - Final eval (epoch: 90). Domain: 0 
+Test: acc1 0.437500 (0.399802)  loss 6.812546 (6.873360)
+2022-09-22 20:37:38,842 - darts - INFO - Final eval (epoch: 90). Domain: 1 
+Test: acc1 0.437500 (0.400794)  loss 6.623931 (6.939303)
+2022-09-22 20:37:38,842 - darts - INFO - Final eval (epoch: 90). Domain: 2 
+Test: acc1 0.437500 (0.400794)  loss 6.624750 (6.835469)
+2022-09-22 20:37:38,843 - darts - INFO - Final eval (epoch: 90). Domain: 3 
+Test: acc1 0.375000 (0.389881)  loss 6.255593 (7.001442)
+2022-09-22 20:37:38,843 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.3978174603174603
+2022-09-22 20:37:39,626 - darts - INFO - Epoch [91/100] Step [1/1], Seed:[90], Domain: 3
+Train: acc1 0.750000 (0.750000)  loss 2.701347 (2.701347)
+Valid: acc1 0.625000 (0.625000)  loss 4.514331 (4.514331)
+2022-09-22 20:37:40,528 - darts - INFO - Epoch [92/100] Step [1/1], Seed:[91], Domain: 3
+Train: acc1 0.812500 (0.812500)  loss 3.368044 (3.368044)
+Valid: acc1 0.687500 (0.687500)  loss 4.687282 (4.687282)
+2022-09-22 20:37:41,431 - darts - INFO - Epoch [93/100] Step [1/1], Seed:[92], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.212061 (2.212061)
+Valid: acc1 0.562500 (0.562500)  loss 4.910419 (4.910419)
+2022-09-22 20:37:42,333 - darts - INFO - Epoch [94/100] Step [1/1], Seed:[93], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.709279 (2.709279)
+Valid: acc1 0.562500 (0.562500)  loss 4.863674 (4.863674)
+2022-09-22 20:37:43,238 - darts - INFO - Epoch [95/100] Step [1/1], Seed:[94], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 3.288702 (3.288702)
+Valid: acc1 0.375000 (0.375000)  loss 5.789389 (5.789389)
+2022-09-22 20:37:44,142 - darts - INFO - Epoch [96/100] Step [1/1], Seed:[95], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.980603 (2.980603)
+Valid: acc1 0.500000 (0.500000)  loss 5.368045 (5.368045)
+2022-09-22 20:37:45,046 - darts - INFO - Epoch [97/100] Step [1/1], Seed:[96], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 2.792716 (2.792716)
+Valid: acc1 0.500000 (0.500000)  loss 4.860898 (4.860898)
+2022-09-22 20:37:45,946 - darts - INFO - Epoch [98/100] Step [1/1], Seed:[97], Domain: 3
+Train: acc1 0.875000 (0.875000)  loss 3.041226 (3.041226)
+Valid: acc1 0.562500 (0.562500)  loss 4.562161 (4.562161)
+2022-09-22 20:37:46,849 - darts - INFO - Epoch [99/100] Step [1/1], Seed:[98], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.867577 (2.867577)
+Valid: acc1 0.562500 (0.562500)  loss 4.879920 (4.879920)
+2022-09-22 20:37:47,753 - darts - INFO - Epoch [100/100] Step [1/1], Seed:[99], Domain: 3
+Train: acc1 0.937500 (0.937500)  loss 2.503363 (2.503363)
+Valid: acc1 0.625000 (0.625000)  loss 4.611701 (4.611701)
+2022-09-22 20:39:23,819 - darts - INFO - Final eval (epoch: None). Domain: 0 
+Test: acc1 0.437500 (0.393600)  loss 7.147790 (6.970898)
+2022-09-22 20:39:23,820 - darts - INFO - Final eval (epoch: None). Domain: 1 
+Test: acc1 0.500000 (0.391900)  loss 7.432494 (6.945482)
+2022-09-22 20:39:23,820 - darts - INFO - Final eval (epoch: None). Domain: 2 
+Test: acc1 0.437500 (0.399900)  loss 7.536108 (6.910621)
+2022-09-22 20:39:23,821 - darts - INFO - Final eval (epoch: None). Domain: 3 
+Test: acc1 0.500000 (0.392000)  loss 8.000154 (6.954981)
+2022-09-22 20:39:23,821 - darts - INFO - Final eval. Avg Domain. 
+Test: 0.39435

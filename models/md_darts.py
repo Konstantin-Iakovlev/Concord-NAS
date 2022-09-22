@@ -190,5 +190,7 @@ class CNN(nn.Module):
                 return module.p
 
     def concord_loss(self):
+        loss = 0.0
         for cell in self.cells:
-            return cell.concord_loss()
+            loss += cell.concord_loss()
+        return loss
