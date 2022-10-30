@@ -118,7 +118,8 @@ class Cell(nn.Module):
 
 class CNN(nn.Module):
     def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
-                 n_nodes=4, stem_multiplier=3, drop_path_proba=0.0, auxiliary=False):
+                 n_nodes=4, stem_multiplier=3, drop_path_proba=0.0, auxiliary=False,
+                 common_head=True):
         super().__init__()
         self.in_channels = in_channels
         self.channels = channels
@@ -155,7 +156,11 @@ class CNN(nn.Module):
                                                              channels_p, n_classes)] for _ in range(n_heads))
 
         self.gap = nn.AdaptiveAvgPool2d(1)
-        self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
+        self.common_head = common_head
+        if common_head:
+            self.linear = nn.Linear(channels_p, n_classes)
+        else:
+            self.linear = nn.ModuleList([nn.Linear(channels_p, n_classes) for _ in range(n_heads)])
 
         self.set_drop_path_proba(drop_path_proba)
 
@@ -173,7 +178,10 @@ class CNN(nn.Module):
 
         out = self.gap(s1)
         out = out.view(out.size(0), -1)  # flatten
-        logits = self.linear[domain_idx](out)
+        if self.common_head:
+            logits = self.linear(out)
+        else:
+            logits = self.linear[domain_idx](out)
 
         cell_out_dict['aux_logits'] = aux_logits
         cell_out_dict['logits'] = logits

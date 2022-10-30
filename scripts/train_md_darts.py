@@ -36,7 +36,8 @@ if __name__ == "__main__":
                 n_heads=len(datasets_train),
                 n_nodes=int(config['darts']['n_nodes']),
                 stem_multiplier=int(config['darts']['stem_multiplier']),
-                drop_path_proba=float(config['darts']['drop_path_proba_init']))
+                drop_path_proba=float(config['darts']['drop_path_proba_init']),
+                common_head=bool(config['darts']['common_head']))
     criterion = nn.CrossEntropyLoss()
 
     optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
