@@ -1,3 +1,4 @@
+from typing import List
 import os
 import torch
 
@@ -56,7 +57,25 @@ def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):
     return 0.5 * torch.distributions.kl.kl_divergence(p_distr, m_distr) + \
            0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
 
+def multi_js_divergence(alphas: List[torch.tensor]) -> torch.tensor:
+    alpha_full = torch.stack(alphas, dim=0)
+    centroid = torch.mean(alpha_full, 0)
+    d_centroid = torch.distributions.Categorical(probs=centroid)
+    js = 0.0
+    for alpha in alphas:
+        d = torch.distributions.Categorical(probs=alpha)
+        js += 1.0/len(alphas) * torch.distributions.kl.kl_divergence(d, d_centroid)
+    return js 
 
+    """
+    loss = 0.0
+    for i in range(len(alphas)):
+        for j in range(i+1, len(alphas)):
+            loss += ((alphas[i] - alphas[j])**2).sum()
+    return loss
+    """
+
+    
 def contrastive_loss(hidden_1: torch.Tensor, hidden_2: torch.Tensor, tau: float = 1.0):
     """
     Computes contrastive loss. Positive pairs are aligned in the 0-th dimension
