@@ -79,7 +79,7 @@ class MdDartsRnnLayerChoice(nn.Module):
 
 
 class MdOneHotRnnLayerChoice(nn.Module):
-    def __init__(self, layer_choice: LayerChoice, genotype: List[Tuple[str, int]]):
+    def __init__(self, layer_choice: LayerChoice, genotype: List[List[Tuple[str, int]]]):
         """Discretized layer choice
 
         :param layer_choice: layer choice
@@ -103,8 +103,9 @@ class MdOneHotRnnLayerChoice(nn.Module):
         :return: current state
         """
         name, prev_node_idx = self.genotype[domain_idx][self.node_idx - 1]
-        out = states + c * (self.op_choices[name](h) - states)  # (num_prev, *)
-        return out[prev_node_idx]
+        act_fn = self.op_choices[name]
+        out = states[prev_node_idx] + c[prev_node_idx] * (act_fn(h[prev_node_idx]) - states[prev_node_idx])
+        return out
 
     def export(self):
         """Performs export of the architecture

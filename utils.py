@@ -4,6 +4,7 @@ import os, shutil
 import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
+import json
 
 
 def repackage_hidden(h):
@@ -43,10 +44,12 @@ def create_exp_dir(path, scripts_to_save=None):
 def save_checkpoint(model, optimizer, epoch, path, finetune=False):
     if finetune:
         torch.save(model.state_dict(), os.path.join(path, 'finetune_model.pt'))
-        # torch.save(optimizer.state_dict(), os.path.join(path, 'finetune_optimizer.pt'))
+        torch.save(optimizer.state_dict(), os.path.join(path, 'finetune_optimizer.pt'))
     else:
         torch.save(model.state_dict(), os.path.join(path, 'model.pt'))
-        # torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
+        torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
+        architecture = model.export()
+        json.dump(architecture, open(os.path.join(path, 'final_architecture.json'), 'w'))
     torch.save({'epoch': epoch+1}, os.path.join(path, 'misc.pt'))
 
 
