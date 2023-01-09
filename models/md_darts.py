@@ -7,7 +7,7 @@ import torch.nn as nn
 from models import ops
 from nni.retiarii.nn.pytorch import LayerChoice, InputChoice
 from trainers.md_darts_trainer import DartsInputChoice, DartsLayerChoice
-
+from models.losses import MdTripletLoss
 
 class AuxiliaryHead(nn.Module):
     """ Auxiliary head in 2/3 place of network to let the gradient flow well """

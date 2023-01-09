@@ -1,4 +1,5 @@
 import copy
+import sys 
 
 import numpy as np
 import torch
@@ -12,13 +13,14 @@ from nni.retiarii.oneshot.pytorch.darts import DartsLayerChoice, \
 from nni.retiarii.oneshot.pytorch.utils import AverageMeterGroup, \
     replace_layer_choice, replace_input_choice, to_device
 
-from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence
+from utils import has_checkpoint, save_checkpoint, load_checkpoint, js_divergence, contrastive_loss, multi_js_divergence
 from models.losses import MdTripletLoss
 
+MAX_T = 0.2
 
 class MdDartsLayerChoice(DartsLayerChoice):
     def __init__(self, layer_choice, num_domains=1,
-                 sampling_mode: str = 'softmax', t: float = 0.2):
+                 sampling_mode: str = 'softmax', t: float = MAX_T):
         """
         param: sampling_mode: sampling mode
         param: t: temperature
@@ -41,7 +43,7 @@ class MdDartsLayerChoice(DartsLayerChoice):
         if self.sampling_mode == 'gumbel-softmax':
             weights = torch.distributions.RelaxedOneHotCategorical(
                 self.t, logits=rbf_outputs
-            ).sample()
+            ).rsample()
         elif self.sampling_mode == 'softmax':
             weights = F.softmax(rbf_outputs / self.t, dim=-1)
         alpha_shape = list(weights.shape) + [1] * (len(op_results.size()) - 1)
@@ -52,11 +54,8 @@ class MdDartsLayerChoice(DartsLayerChoice):
         loss = torch.tensor(0.0).to(self.alpha[0].device)
         if len(self.alpha) == 1:
             return loss
-        for i in range(len(self.alpha)):
-            for j in range(i + 1, len(self.alpha)):
-                loss += js_divergence(self.alpha[i].softmax(dim=0),
-                                      self.alpha[j].softmax(dim=0))
-        return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
+        return multi_js_divergence([alpha.softmax(dim=0) for alpha in self.alpha])
+        
 
     def export(self, domain_idx: int):
         rbf_outputs = self.alpha[domain_idx]
@@ -65,7 +64,7 @@ class MdDartsLayerChoice(DartsLayerChoice):
 
 class MdDartsInputChoice(DartsInputChoice):
     def __init__(self, input_choice, num_domains=1,
-                 sampling_mode='softmax', t=0.2):
+                 sampling_mode='softmax', t=MAX_T):
         super(MdDartsInputChoice, self).__init__(input_choice)
         delattr(self, 'alpha')
         self.alpha = nn.ParameterList([
@@ -86,18 +85,14 @@ class MdDartsInputChoice(DartsInputChoice):
         if self.sampling_mode == 'gumbel-softmax':
             weights = torch.distributions.RelaxedOneHotCategorical(
                 self.t, logits=rbf_outputs
-            ).sample()
+            ).rsample()
             return torch.sum(inputs * weights.view(*alpha_shape), 0)
 
     def concord_loss(self):
         loss = torch.tensor(0.0).to(self.alpha[0].device)
         if len(self.alpha) == 1:
             return loss
-        for i in range(len(self.alpha)):
-            for j in range(i + 1, len(self.alpha)):
-                loss += js_divergence(self.alpha[i].softmax(dim=0),
-                                      self.alpha[j].softmax(dim=0))
-        return 2 * loss / (len(self.alpha) * (len(self.alpha) - 1))
+        return multi_js_divergence([alpha.softmax(dim=0) for alpha in self.alpha])
 
     def export(self, domain_idx: int):
         rbf_outputs = self.alpha[domain_idx]
@@ -106,7 +101,7 @@ class MdDartsInputChoice(DartsInputChoice):
 
 class MdDartsTrainer(DartsTrainer):
     def __init__(self, folder_name, model, loss, metrics, optimizer, lr_scheduler,
-                 num_epochs, datasets, seed=0, concord_coeff=0.0, contrastive_coeff=0.0, grad_clip=5.,
+                 num_epochs, datasets,  test_datasets, seed=0, concord_coeff=0.0, contrastive_coeff=0.0, grad_clip=5.,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
                  arc_learning_rate=3.0E-4, betas=(0.5, 0.999),
@@ -121,22 +116,32 @@ class MdDartsTrainer(DartsTrainer):
         self.metrics = metrics
         self.num_epochs = num_epochs
         self.datasets = datasets
+        self.test_datasets = test_datasets        
+
+        
         self.batch_size = batch_size
         self.workers = workers
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') \
             if device is None else device
         self.concord_coeff = torch.tensor(concord_coeff).to(self.device)
-        self.contrastive_coeff = torch.tensor(contrastive_coeff).to(self.device)
         self.contrastive_loss = MdTripletLoss()
+        self.contrastive_coeff = torch.tensor(contrastive_coeff).to(self.device)
         self.eta_lr = eta_lr
         self.log_frequency = log_frequency
         self._ckpt_dir = os.path.join('searchs', folder_name)
-        self._seed = seed
+        self._seed = seed        
         os.makedirs(os.path.join('searchs', folder_name), exist_ok=True)
         self._logger = logging.getLogger('darts')
-        self._logger.addHandler(logging.FileHandler(os.path.join('searchs', folder_name,
-                                                                 folder_name + '.log')))
-
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')        
+        handler = logging.FileHandler(os.path.join('searchs', folder_name,
+                                                                 folder_name + '.log'))
+        handler.setFormatter(formatter)                                                                 
+        self._logger.setLevel(logging.DEBUG)                                                                 
+        self._logger.addHandler(handler)        
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)                                                                 
+        
         self.writer = SummaryWriter(os.path.join('searchs', folder_name))
         self._step_num = 0
         self.p = torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
@@ -169,6 +174,8 @@ class MdDartsTrainer(DartsTrainer):
         list_of_params = []
         for params in ctrl_params.values():
             list_of_params.extend(params)
+       
+            
         self.ctrl_optim = torch.optim.Adam(list_of_params, arc_learning_rate, betas=betas,
                                            weight_decay=arc_weight_decay)
         self.unrolled = unrolled
@@ -182,67 +189,114 @@ class MdDartsTrainer(DartsTrainer):
     def _init_dataloaders(self):
         self.train_loaders = []
         self.valid_loaders = []
-        for ds in self.datasets:
+        self.test_loaders = []        
+        
+        for tds, ds in zip(self.test_datasets, self.datasets):
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
-            np.random.seed(0)
+            np.random.seed(self._seed)
             indices = np.random.permutation(np.arange(n_train))
             train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
             valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,
                                                                   batch_size=self.batch_size,
                                                                   sampler=train_sampler,
-                                                                  num_workers=self.workers))
+                                                                  num_workers=self.workers, pin_memory=True))
             self.valid_loaders.append(torch.utils.data.DataLoader(ds,
                                                                   batch_size=self.batch_size,
                                                                   sampler=valid_sampler,
-                                                                  num_workers=self.workers))
+                                                                  num_workers=self.workers, pin_memory=True))
+            self.test_loaders.append(torch.utils.data.DataLoader(tds,
+                                                                  batch_size=self.batch_size,                                                                  
+                                                                  num_workers=self.workers, pin_memory=True))                                                                  
 
-    def _logits_and_loss(self, X, y):
+
+    def _logits_and_loss(self, X, y, regularizer=True):
         domain_idx = self.curr_domain
         model_out = self.model(X, domain_idx)
         logits = model_out['logits']
         hidden_1_list = model_out['hidden_states']
-        loss = self.loss(logits, y) + self.concord_coeff * self.model.concord_loss()
-        # contrastive loss
-        if len(self.datasets) > 1:
-            hidden_2_list = self.model(self.another_batch['x'], self.another_domain)['hidden_states']
-            loss += self.contrastive_coeff * sum([self.contrastive_loss.forward(h1, h2, y, self.another_batch['y'])
+        loss = self.loss(logits, y) 
+        if regularizer:
+            if self.concord_coeff > 0:
+                coef = self.concord_coeff                
+                loss += coef * self.model.concord_loss()
+            # contrastive loss
+            #raise ValueError([len(self.datasets)>1, self.contrastive_coeff>0, self.contrastive_coeff]) 
+            if len(self.datasets) > 1 and self.contrastive_coeff>0:
+                hidden_2_list = self.model(self.another_batch['x'], self.another_domain)['hidden_states']
+                loss += self.contrastive_coeff * sum([self.contrastive_loss.forward(h1, h2, y, self.another_batch['y'])
                                                   for h1, h2 in zip(hidden_1_list, hidden_2_list)]) / len(hidden_1_list)
 
-        return logits, loss * self.p[domain_idx]
+        return logits, loss # * self.p[domain_idx]
 
+    def final_eval(self, fast=False, epoch=None):
+        test_meters = [AverageMeterGroup() for _ in range(len(self.test_datasets))]
+        for m in self.nas_modules:
+            if hasattr(m, 't'):
+                m.t = max(MAX_T, self.t) 
+        self.model.eval()
+        evaluated = 0
+        for step, (test_objects) in enumerate(zip(*self.test_loaders)):                 
+            for domain_idx in range(len(self.datasets)):
+                self.curr_domain = domain_idx
+                tt_X, tt_y = test_objects[domain_idx]                
+                tt_X, tt_y = to_device(tt_X, self.device), to_device(tt_y, self.device)
+                with torch.no_grad():
+                    logits, loss = self._logits_and_loss(tt_X, tt_y, False)
+                    metrics = self.metrics(logits, tt_y)
+                    metrics['loss'] = loss.item() / self.p[domain_idx]
+                    test_meters[domain_idx].update(metrics)
+                if domain_idx == 0:
+                    evaluated += len(tt_y)
+            if fast and evaluated > 4000/(len(self.datasets)):
+                break
+        mean = 0.0
+        for domain_idx in range(len(self.datasets)):                    
+            self._logger.info(f'Final eval (epoch: {epoch}). Domain: {domain_idx} \nTest: {test_meters[domain_idx]}')
+            self.writer.add_scalar(f'Acc/test_{domain_idx}', test_meters[domain_idx]['acc1'].avg, self._step_num) 
+            mean += test_meters[domain_idx]['acc1'].avg/len(test_meters)
+        self._logger.info(f'Final eval. Avg Domain. \nTest: {mean}')
+        self.writer.add_scalar(f'Acc/test_avg', mean, self._step_num) 
+        
+        
+                                                 
     def _train_one_epoch(self, epoch):
         if has_checkpoint(self._ckpt_dir, epoch):
             load_checkpoint(self._ckpt_dir, epoch, self.model, self.model_optim,
                             self.ctrl_optim)
             self._logger.info(f'Loaded checkpoint_{epoch}.ckp')
-            return
+        self.model.train()
         trn_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         val_meters = [AverageMeterGroup() for _ in range(len(self.datasets))]
         seed = self._seed + epoch
         torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed_all(seed)        
+        if epoch % 10 == 0:
+            self.final_eval(fast=True, epoch=epoch)
+        for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):      
+        
+            
 
-        for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):
-            self.ctrl_optim.zero_grad()
-            self.model_optim.zero_grad()
             for domain_idx in range(len(self.datasets)):
-                self.model.train()
+                self.ctrl_optim.zero_grad()
+                self.model_optim.zero_grad()
                 trn_X, trn_y = train_objects[domain_idx]
                 val_X, val_y = valid_objects[domain_idx]
                 trn_X, trn_y = to_device(trn_X, self.device), to_device(trn_y, self.device)
                 val_X, val_y = to_device(val_X, self.device), to_device(val_y, self.device)
 
-                # save current domain, another domain and batch from another domain
+                # save current domain
                 self.curr_domain = domain_idx
-                self.another_domain = np.random.choice(len(self.datasets))
-                an_X, an_y = train_objects[self.another_domain]
+                
+                self.another_domain = np.random.choice(len(self.datasets))                
+                an_X, an_y = valid_objects[self.another_domain]
                 an_X = to_device(an_X, self.device)
                 an_y = to_device(an_y, self.device)
                 self.another_batch = {'x': an_X, 'y': an_y}
-
+                
+                
                 # phase 1. architecture step
                 if self.unrolled:
                     self._unrolled_backward(trn_X, trn_y, val_X, val_y)
@@ -251,44 +305,60 @@ class MdDartsTrainer(DartsTrainer):
 
                 # phase 2: child network step
                 # TODO: note that contrastive loss depends on w and alpha => we may need to remove in from valid loss
+                an_X, an_y = train_objects[self.another_domain]
+                an_X = to_device(an_X, self.device)
+                an_y = to_device(an_y, self.device)
+                self.another_batch = {'x': an_X, 'y': an_y}
+
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
-                self.writer.add_scalar(f'Loss/train_{domain_idx}', loss.item() / self.p[domain_idx],
-                                       self._step_num)
+                if step == 0:
+                    self.writer.add_scalar(f'Loss/train_{domain_idx}', loss.item() / self.p[domain_idx],
+                                           self._step_num)
                 loss.backward()
+                
+
+
+                if self.grad_clip > 0:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+                # perform a step after calculating loss on each domain
+                self.model_optim.step()
+                self.ctrl_optim.step()
+             
 
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
                 trn_meters[domain_idx].update(metrics)
-                self.writer.add_scalar(f'Acc/train_{domain_idx}', metrics['acc1'], self._step_num)
+                if step == 0:
+                    self.writer.add_scalar(f'Acc/train_{domain_idx}', metrics['acc1'], self._step_num)
+            
 
+
+            if self.log_frequency is not None and step % self.log_frequency == 0:
                 # validate
                 self.model.eval()
+                
                 with torch.no_grad():
                     logits, loss = self._logits_and_loss(val_X, val_y)
-                    self.writer.add_scalar(f'Loss/val_{domain_idx}',
-                                           loss.item() / self.p[domain_idx], self._step_num)
+                    if step == 0:
+                        self.writer.add_scalar(f'Loss/val_{domain_idx}',
+                                               loss.item() / self.p[domain_idx], self._step_num)
                     metrics = self.metrics(logits, val_y)
                     metrics['loss'] = loss.item() / self.p[domain_idx]
-                    val_meters[domain_idx].update(metrics)
+                    val_meters[domain_idx].update(metrics)                  
                     self.writer.add_scalar(f'Acc/val_{domain_idx}', metrics['acc1'], self._step_num)
-                    # update p[domain_idx] using validation loss
-                    self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * self.eta_lr)
-
-                if self.log_frequency is not None and step % self.log_frequency == 0:
-                    self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
-                                      epoch + 1, self.num_epochs, step + 1,
-                                      min([len(loader) for loader in self.train_loaders]),
-                                      seed, domain_idx, trn_meters[domain_idx], val_meters[domain_idx])
-
-            if self.grad_clip > 0:
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-            # perform a step after calculating loss on each domain
-            self.model_optim.step()
-            self.ctrl_optim.step()
+                # update p[domain_idx] using validation loss
+                self.p[domain_idx] *= torch.exp(loss / self.p[domain_idx] * self.eta_lr)
+                self._logger.info('Epoch [%s/%s] Step [%s/%s], Seed:[%s], Domain: %s\nTrain: %s\nValid: %s',
+                                  epoch + 1, self.num_epochs, step + 1,
+                                  min([len(loader) for loader in self.train_loaders]),
+                                  seed, domain_idx, trn_meters[domain_idx], val_meters[domain_idx])
+            self.model.train()
+       
 
             self.p /= self.p.sum()
-            for i in range(self.p.shape[0]):
-                self.writer.add_scalar(f'P_{i}', self.p[i].item(), self._step_num)
+            if step == 0:
+                for i in range(self.p.shape[0]):
+                    self.writer.add_scalar(f'P_{i}', self.p[i].item(), self._step_num)
             self._step_num += 1
 
         self.lr_scheduler.step()
@@ -296,11 +366,14 @@ class MdDartsTrainer(DartsTrainer):
         self.t += self.delta_t
         for m in self.nas_modules:
             if hasattr(m, 't'):
-                m.t = max(0.2, self.t)
+                m.t = max(MAX_T, self.t)                                
         # update drop path proba
         self.model.set_drop_path_proba(self.model.get_drop_path_proba() + self.drop_path_proba_delta)
-        save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
-                        self.model_optim.state_dict(), self.ctrl_optim.state_dict())
+        try:
+            save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
+                            self.model_optim.state_dict(), self.ctrl_optim.state_dict())
+        except Exception as e:
+            print ('could not save checkpoint', repr(e))
 
     @torch.no_grad()
     def export(self, domain_idx: int):
@@ -337,10 +410,13 @@ class MdDartsTrainer(DartsTrainer):
             for param, d, h in zip(w_ctrl, d_ctrl, hessian):
                 # gradient = dalpha - lr * hessian; accumulate gradients
                 if param.grad is None:
+                    continue
                     param.grad = torch.zeros_like(param)
                 if d is None:
+                    continue
                     d = torch.zeros_like(param)
                 if h is None:
+                    continue
                     h = torch.zeros_like(param)
                 param.grad -= d - lr * h
 
@@ -383,10 +459,15 @@ class MdDartsTrainer(DartsTrainer):
                     if d is not None:
                         p += e * d
 
-            _, loss = self._logits_and_loss(trn_X, trn_y)
+            _, loss = self._logits_and_loss(trn_X, trn_y)              
             dalphas.append(torch.autograd.grad(loss, [p for _, c in self.nas_modules for p in c.alpha.parameters()],
                                                allow_unused=True))
+                                                           
+                                               
 
         dalpha_pos, dalpha_neg = dalphas  # dalpha { L_trn(w+) }, # dalpha { L_trn(w-) }
-        hessian = [(p - n) / (2. * eps) for p, n in zip(dalpha_pos, dalpha_neg)]
+        hessian = [(p - n) / (2. * eps) if (p is not None and n is not None) else None  for p, n in zip(dalpha_pos, dalpha_neg) ]
         return hessian
+    
+    def clear_logger(self):
+        self._logger.handlers.clear()
