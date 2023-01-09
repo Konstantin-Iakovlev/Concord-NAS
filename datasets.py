@@ -54,7 +54,9 @@ class Broadcast(object):
 
     def __call__(self, tensor):
         return tensor.broadcast_to(self.channels, *tensor.shape[1:])
-MINI_SUBSET = 128 # twice # 500: 50/65
+
+
+MINI_SUBSET = 128  # twice # 500: 50/65
 
 
 def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int = 0, seed=0):
@@ -92,61 +94,46 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
     datasets_test = []
     for sub_ds in ds_name.split('+'):
         if sub_ds == "cifar10":
-            dataset_train = CIFAR10(root="./data", train=True, download=True, transform=train_transform)
-            dataset_test = CIFAR10(root="./data", train=False, download=True, transform=valid_transform)
+            dataset_train = CIFAR10(
+                root="./data", train=True, download=True, transform=train_transform)
+            dataset_test = CIFAR10(
+                root="./data", train=False, download=True, transform=valid_transform)
         elif sub_ds.startswith('MNIST'):
             angle = float(sub_ds.split('-')[-1])
             dataset_train = MNIST(root="./data", train=True, download=True,
                                   transform=transforms.Compose([train_transform, Rotate(angle)]))
             ind = list([i for i in range(len(dataset_train))])
             rs.shuffle(ind)
-            dataset_train = Subset(dataset_train, ind[:MINI_SUBSET]) 
+            dataset_train = Subset(dataset_train, ind[:MINI_SUBSET])
             dataset_test = MNIST(root="./data", train=False, download=True,
                                  transform=transforms.Compose([valid_transform, Rotate(angle)]))
-        elif  sub_ds.startswith('MINI-FMNIST'):
+        elif sub_ds.startswith('MINI-FMNIST'):
             suffix = sub_ds.split('-')[-1]
             if suffix.startswith('r'):
-                angle = int(sub_ds.split('-')[-1][1:])    
-                train_transform =  transforms.Compose([train_transform, Rotate(angle)])
-                valid_transform =  transforms.Compose([valid_transform, Rotate(angle)])
+                angle = int(sub_ds.split('-')[-1][1:])
+                train_transform = transforms.Compose(
+                    [train_transform, Rotate(angle)])
+                valid_transform = transforms.Compose(
+                    [valid_transform, Rotate(angle)])
                 target_transform = None
-            else:
-                shift = int(sub_ds.split('-')[-1])  
-                target_transform = ShiftClass(shift)    
                 
-            """
-            if angle != 0:
-
-                rng_permute = np.random.RandomState(angle)
-
-                idx_permute = torch.from_numpy(rng_permute.permutation(784))
-                #perm_transform = Rotate(angle) 
-                angle = angle/360
-                angle = angle * np.pi * 2
-                
-                perm_transform = transforms.Lambda(lambda x: torch.sin(x* np.pi * 2 + angle)/2 + 0.5) 
-                train_transform = transforms.Compose([train_transform, perm_transform]        )
-                valid_transform = transforms.Compose([valid_transform, perm_transform]        )    
-                """
-                
-            
-
-            dataset_train =    FashionMNIST(root="./data", train=True, download=True,
-                                  transform=train_transform, target_transform=target_transform)
-   
+            dataset_train = FashionMNIST(root="./data", train=True, download=True,
+                                         transform=train_transform, target_transform=target_transform)
 
             ind = list([i for i in range(len(dataset_train))])
             rs.shuffle(ind)
-            dataset_train = Subset(dataset_train, ind[:MINI_SUBSET]) 
+            dataset_train = Subset(dataset_train, ind[:MINI_SUBSET])
             #print (angle, dataset_train[0][0].mean(), dataset_train[0][1])
             dataset_test = FashionMNIST(root="./data", train=False, download=True,
-                                 transform=valid_transform, target_transform = target_transform)                                   
+                                        transform=valid_transform, target_transform=target_transform)
             ind = list([i for i in range(len(dataset_test))])
-            dataset_test = Subset(dataset_test, ind) 
+            dataset_test = Subset(dataset_test, ind)
 
         elif sub_ds == 'SVHN':
-            dataset_train = SVHN(root="./data", split='train', download=True, transform=train_transform)
-            dataset_test = SVHN(root="./data", split='test', download=True, transform=valid_transform)
+            dataset_train = SVHN(root="./data", split='train',
+                                 download=True, transform=train_transform)
+            dataset_test = SVHN(root="./data", split='test',
+                                download=True, transform=valid_transform)
         else:
             raise NotImplementedError
         datasets_train.append(dataset_train)
@@ -154,7 +141,7 @@ def get_dataset(ds_name: str, input_size: int, channels: int, cutout_length: int
     return ConcatDataset(datasets_train), ConcatDataset(datasets_test)
 
 
-def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_length: int = 0, seed: int =0):
+def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_length: int = 0, seed: int = 0):
     """
     Args:
         ds_names (List[str]):
@@ -168,7 +155,8 @@ def get_datasets(ds_names: List[str], input_size: int, channels: int, cutout_len
     train_datasets = []
     test_datasets = []
     for id, ds_name in enumerate(ds_names):
-        train_ds, val_ds = get_dataset(ds_name, input_size, channels, cutout_length, seed=seed+id)
+        train_ds, val_ds = get_dataset(
+            ds_name, input_size, channels, cutout_length, seed=seed+id)
         train_datasets.append(train_ds)
         test_datasets.append(val_ds)
     return train_datasets, test_datasets

@@ -55,7 +55,8 @@ def js_divergence(pr_1: torch.tensor, pr_2: torch.tensor):
     q_distr = torch.distributions.Categorical(probs=pr_2)
     m_distr = torch.distributions.Categorical(probs=0.5 * (pr_1 + pr_2))
     return 0.5 * torch.distributions.kl.kl_divergence(p_distr, m_distr) + \
-           0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
+        0.5 * torch.distributions.kl.kl_divergence(q_distr, m_distr)
+
 
 def multi_js_divergence(alphas: List[torch.tensor]) -> torch.tensor:
     alpha_full = torch.stack(alphas, dim=0)
@@ -64,8 +65,9 @@ def multi_js_divergence(alphas: List[torch.tensor]) -> torch.tensor:
     js = 0.0
     for alpha in alphas:
         d = torch.distributions.Categorical(probs=alpha)
-        js += 1.0/len(alphas) * torch.distributions.kl.kl_divergence(d, d_centroid)
-    return js 
+        js += 1.0/len(alphas) * \
+            torch.distributions.kl.kl_divergence(d, d_centroid)
+    return js
 
     """
     loss = 0.0
@@ -75,7 +77,7 @@ def multi_js_divergence(alphas: List[torch.tensor]) -> torch.tensor:
     return loss
     """
 
-    
+
 def contrastive_loss(hidden_1: torch.Tensor, hidden_2: torch.Tensor, tau: float = 1.0):
     """
     Computes contrastive loss. Positive pairs are aligned in the 0-th dimension
@@ -85,10 +87,11 @@ def contrastive_loss(hidden_1: torch.Tensor, hidden_2: torch.Tensor, tau: float 
     :returns: averaged by batch contrastive loss
     """
     assert hidden_1.shape == hidden_2.shape
-    sim_matrix = hidden_1.view(hidden_1.shape[0], -1) @ hidden_2.view(hidden_2.shape[0], -1).transpose(-1, -2)
+    sim_matrix = hidden_1.view(
+        hidden_1.shape[0], -1) @ hidden_2.view(hidden_2.shape[0], -1).transpose(-1, -2)
     norm_matrix = torch.outer(hidden_1.view(hidden_1.shape[0], -1).norm(dim=-1),
                               hidden_2.view(hidden_2.shape[0], -1).norm(dim=-1)) + \
-                  torch.tensor(1e-8).to(hidden_1.device)
+        torch.tensor(1e-8).to(hidden_1.device)
     sim_matrix /= norm_matrix
     sim_matrix = torch.exp(sim_matrix / tau)
     pos_pairs = torch.diag(sim_matrix)

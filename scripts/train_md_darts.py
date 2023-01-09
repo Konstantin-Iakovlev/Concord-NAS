@@ -17,26 +17,25 @@ logger = logging.getLogger('nni')
 
 if __name__ == "__main__":
     parser = ArgumentParser("darts")
-    parser.add_argument("--config", default='configs/md_mnist_basic/md_darts.cfg')
+    parser.add_argument(
+        "--config", default='configs/md_mnist_basic/md_darts.cfg')
     args = parser.parse_args()
 
     config = ConfigObj(args.config)
     print(config)
     for seed in config['seed'].split(';'):
         seed = int(seed)
-       
-        
 
         datasets_train, datasets_test = datasets.get_datasets(config['datasets'].split(';'),
-                                                               int(config['darts']['input_size']),
-                                                               int(config['darts']['input_channels']),
-                                                               int(config['cutout_length']),
-                                                               seed = seed)
-        #for d in datasets_train:
+                                                              int(config['darts']
+                                                                  ['input_size']),
+                                                              int(config['darts']
+                                                                  ['input_channels']),
+                                                              int(config['cutout_length']),
+                                                              seed=seed)
+        # for d in datasets_train:
         #    print (next(iter(datasets_train))[0][0].mean())
-        #continue
-        
-
+        # continue
 
         model = CNN(int(config['darts']['input_size']),
                     int(config['darts']['input_channels']),
@@ -50,7 +49,8 @@ if __name__ == "__main__":
         criterion = nn.CrossEntropyLoss()
 
         optim = torch.optim.SGD(model.parameters(), float(config['darts']['optim']['w_lr']),
-                                momentum=float(config['darts']['optim']['w_momentum']),
+                                momentum=float(
+                                    config['darts']['optim']['w_momentum']),
                                 weight_decay=float(config['darts']['optim']['w_weight_decay']))
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, int(config['epochs']),
                                                                   eta_min=float(config['darts']['optim']['w_lr_min']))
@@ -58,35 +58,41 @@ if __name__ == "__main__":
         trainer = MdDartsTrainer(folder_name,
                                  model,
                                  loss=criterion,
-                                 metrics=lambda output, target: accuracy(output, target, topk=(1,)),
+                                 metrics=lambda output, target: accuracy(
+                                     output, target, topk=(1,)),
                                  optimizer=optim,
                                  lr_scheduler=lr_scheduler,
-                                 workers =  0, #os.cpu_count(),
+                                 workers=0,  # os.cpu_count(),
                                  num_epochs=int(config['epochs']),
                                  datasets=datasets_train,
                                  test_datasets=datasets_test,
                                  seed=seed,
-                                 concord_coeff=float(config['darts']['concord_coeff']),
-                                 contrastive_coeff=float(config['darts']['contrastive_coeff']),
+                                 concord_coeff=float(
+                                     config['darts']['concord_coeff']),
+                                 contrastive_coeff=float(
+                                     config['darts']['contrastive_coeff']),
                                  batch_size=int(config['batch_size']),
                                  log_frequency=int(config['log_frequency']),
-                                 arc_learning_rate=float(config['darts']['optim']['alpha_lr']),
-                                 arc_weight_decay=float(config['darts']['optim']['alpha_weight_decay']),
+                                 arc_learning_rate=float(
+                                     config['darts']['optim']['alpha_lr']),
+                                 arc_weight_decay=float(
+                                     config['darts']['optim']['alpha_weight_decay']),
                                  unrolled=eval(config['darts']['unrolled']),
-                                 eta_lr=float(config['darts']['optim']['eta_lr']),
+                                 eta_lr=float(
+                                     config['darts']['optim']['eta_lr']),
                                  betas=(float(config['darts']['optim']['alpha_beta_1']),
                                         float(config['darts']['optim']['alpha_beta_2'])),
                                  sampling_mode=config['darts']['sampling_mode'],
                                  t=float(config['darts']['initial_temp']),
                                  delta_t=float(config['darts']['delta_t']),
-                                 drop_path_proba_delta=float(config['darts']['drop_path_proba_delta'])
+                                 drop_path_proba_delta=float(
+                                     config['darts']['drop_path_proba_delta'])
                                  )
         print(f'Trainer initialized for seed {seed}')
-        print('---' * 20)    
+        print('---' * 20)
         trainer.fit()
         trainer.final_eval()
         trainer.clear_logger()
-        
 
         architectures = []
         for i in range(len(config['datasets'].split(';'))):
