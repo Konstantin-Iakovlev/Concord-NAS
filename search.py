@@ -1,28 +1,38 @@
 import argparse
-import os, sys, glob
-import time
+import glob
 import math
-import numpy as np
-import torch
-import logging
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
-from torch.utils.tensorboard import SummaryWriter
+from utils import create_exp_dir, get_batch
+import time
+import sys
+import os
 
-import gc
+import jax
+import flax
+import jax.numpy as jnp
 
 import data
-# import model_search as model
+import gc
+import logging
+
 from model import MdRnnModel
+from utils import batchify
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+from flax.training import train_state
+import optax
 
-parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 Language Model')
+from typing import Any
+from genotypes import STEPS
+
+from typing import Any, Callable
+
+from flax import core, struct
+from tensorboardX import SummaryWriter
+
+
+parser = argparse.ArgumentParser(
+    description='Flax PennTreeBank Language Model')
 parser.add_argument('--data', type=str, default='data/penn/',
                     help='location of the data corpus')
-parser.add_argument('--device', type=str, default='cuda',
-                    help='device: cpu, cuda')
 parser.add_argument('--emsize', type=int, default=300,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=300,
@@ -53,8 +63,8 @@ parser.add_argument('--seed', type=int, default=3,
                     help='random seed')
 parser.add_argument('--nonmono', type=int, default=5,
                     help='random seed')
-parser.add_argument('--log-interval', type=int, default=50, metavar='N',
-                    help='report interval')
+# parser.add_argument('--log-interval', type=int, default=50, metavar='N',
+#                     help='report interval')
 parser.add_argument('--save', type=str,  default='EXP',
                     help='path to save the final model')
 parser.add_argument('--alpha', type=float, default=0,
@@ -69,7 +79,8 @@ parser.add_argument('--small_batch_size', type=int, default=-1,
                      until batch_size is reached. An update step is then performed.')
 parser.add_argument('--max_seq_len_delta', type=int, default=20,
                     help='max sequence length')
-parser.add_argument('--unrolled', action='store_true', default=False, help='use one-step unrolled validation loss')
+parser.add_argument('--unrolled', action='store_true',
+                    default=False, help='use one-step unrolled validation loss')
 parser.add_argument('--arch_wdecay', type=float, default=1e-3,
                     help='weight decay for the architecture encoding alpha')
 parser.add_argument('--arch_lr', type=float, default=3e-3,
@@ -84,196 +95,171 @@ if args.small_batch_size < 0:
 args.save = 'search-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
 
+# steup logging
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
-    format=log_format, datefmt='%m/%d %I:%M:%S %p')
+                    format=log_format, datefmt='%m/%d %I:%M:%S %p')
 fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
 logging.getLogger().addHandler(fh)
 
-# Set the random seed manually for reproducibility.
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-if torch.cuda.is_available():
-    torch.cuda.set_device(args.device)
-    cudnn.benchmark = True
-    cudnn.enabled=True
-    torch.cuda.manual_seed_all(args.seed)
 
 corpus = data.Corpus(args.data)
 
 eval_batch_size = 10
 test_batch_size = 1
 
-train_data = batchify(corpus.train, args.batch_size, args)
-search_data = batchify(corpus.valid, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
+train_data = batchify(corpus.train, args.batch_size)
+search_data = batchify(corpus.valid, args.batch_size)
+val_data = batchify(corpus.valid, eval_batch_size)
+test_data = batchify(corpus.test, test_batch_size)
 
 
 ntokens = len(corpus.dictionary)
-model = MdRnnModel(ntokens, args.emsize, args.nhid, args.nhidlast, 
-                    args.dropout, args.dropouth, args.dropoutx, args.dropouti, args.dropoute,
-                    genotype=None, n_domains=1).to(args.device)
-# TODO: add domains to argparser, domain-agnostic dataset and add domain_idx to forward pass
+model = MdRnnModel(ntoken=ntokens, ninp=args.emsize, nhid=args.nhid, nhidlast=args.nhidlast,
+                   training=True, dropout=args.dropout, dropouth=args.dropouth, dropoutx=args.dropoutx,
+                   dropouti=args.dropouti, dropoute=args.dropoute, genotype=None)
 
-size = 0
-for p in model.parameters():
-    size += p.nelement()
-logging.info('param size: {}'.format(size))
+# initialize a model
+key = jax.random.PRNGKey(0)
+
+seq_len = 10
+bs = 4
+
+inp = jnp.ones((seq_len, bs), dtype=jnp.int32)
+hidden = jax.random.normal(key, (bs, args.emsize))
+
+params = model.init({'locked_dropout': key, 'dropout': key, 'params': key,
+                     'mask_2d': key}, inp, hidden)
+print(jax.tree_map(lambda x: x.shape, params))
+print(model.apply(params, inp, hidden, rngs={'locked_dropout': key, 'dropout': key, 'params': key,
+                     'mask_2d': key}, mutable='batch_stats')[0][0].shape)
+
 logging.info('initial genotype:')
-logging.info(model.export())
+# logging.info(model.export())
 
-arch_optimizer = torch.optim.Adam(model.struct_parameters(), lr=args.arch_lr,
-    weight_decay=args.arch_wdecay)
-# TODO: add architecture optimizer (w/o unroll) and weight optimizer
+opt_weights = optax.masked(optax.chain(optax.clip_by_global_norm(args.clip),
+                                       optax.add_decayed_weights(args.wdecay), optax.sgd(args.lr)),
+                                       jax.tree_util.tree_map(lambda x: x.shape[-1] != STEPS, params['params']))
 
-total_params = sum(x.data.nelement() for x in model.parameters())
-logging.info('Args: {}'.format(args))
-logging.info('Model total parameters: {}'.format(total_params))
+# TODO: add unroll (note that it give minor performance gain)
+opt_alpha = optax.masked(optax.chain(optax.add_decayed_weights(args.arch_wdecay), optax.adam(args.arch_lr)),
+                         jax.tree_util.tree_map(lambda x: x.shape[-1] == STEPS, params['params']))
 
+writer = SummaryWriter(args.save)
 
-@torch.no_grad()
-def evaluate(data_source, batch_size=10):
-    # Turn on evaluation mode which disables dropout.
-    model.eval()
-    total_loss = 0
-    ntokens = len(corpus.dictionary)
-    hidden = model.init_hidden(batch_size)
-    for i in range(0, data_source.size(0) - 1, args.bptt):
-        data, targets = get_batch(data_source, i, args, evaluation=True)
-        data = data.to(args.device)
-        targets = targets.to(args.device)
+class RnnNasTrainState(flax.struct.PyTreeNode):
+    step: int
+    apply_fn: Callable = struct.field(pytree_node=False)
+    params: core.FrozenDict[str, Any]
+    opt_weights: optax.GradientTransformation = struct.field(pytree_node=False)
+    opt_weights_state: optax.OptState
+    opt_alpha: optax.GradientTransformation = struct.field(pytree_node=False)
+    opt_alpha_state: optax.OptState
 
-        targets = targets.view(-1)
+    batch_stats: Any
+    mask_2d: jax.random.KeyArray
+    dropout: jax.random.KeyArray
+    locked_dropout: jax.random.KeyArray
+    params_key: jax.random.KeyArray
 
-        log_prob, hidden = model(data, hidden)
-        loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), targets).data
+    def apply_gradients_weights(self, *, grads, **kwargs):
+        updates, new_weights_opt_state = self.opt_weights.update(grads,
+                                                                 self.opt_weights_state, self.params)
+        new_params = optax.apply_updates(self.params, updates)
+        return self.replace(step=self.step + 1, params=new_params, opt_weights_state=new_weights_opt_state,
+                            **kwargs)
 
-        total_loss += loss * len(data)
+    def apply_gradients_alpha(self, *, grads, **kwargs):
+        updates, new_opt_alpha_state = self.opt_alpha.update(grads,
+                                                             self.opt_alpha_state, self.params)
+        new_params = optax.apply_updates(self.params, updates)
+        return self.replace(params=new_params, opt_alpha_state=new_opt_alpha_state, **kwargs)
 
-        hidden = repackage_hidden(hidden)
-    return total_loss.item() / len(data_source)
-
-
-def train():
-    assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
-
-    # Turn on training mode which enables dropout.
-    total_loss = 0
-    start_time = time.time()
-    ntokens = len(corpus.dictionary)
-    hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
-    hidden_valid = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
-    batch, i = 0, 0
-    while i < train_data.size(0) - 1 - 1:
-        bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
-        # Prevent excessively small or negative sequence lengths
-        # seq_len = max(5, int(np.random.normal(bptt, 5)))
-        # # There's a very small chance that it could select a very long sequence length resulting in OOM
-        # seq_len = min(seq_len, args.bptt + args.max_seq_len_delta)
-        seq_len = int(bptt)
-
-        lr2 = optimizer.param_groups[0]['lr']
-        optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
-        model.train()
-
-        data_valid, targets_valid = get_batch(search_data, i % (search_data.size(0) - 1), args)
-        data_valid = data_valid.to(args.device)
-        targets_valid = targets_valid.to(args.device)
-
-        data, targets = get_batch(train_data, i, args, seq_len=seq_len)
-        data = data.to(args.device)
-        targets = targets.to(args.device)
-
-        optimizer.zero_grad()
-
-        start, end, s_id = 0, args.small_batch_size, 0
-        while start < args.batch_size:
-            cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
-            cur_data_valid, cur_targets_valid = data_valid[:, start: end], targets_valid[:, start: end].contiguous().view(-1)
-
-            # Starting each batch, we detach the hidden state from how it was previously produced.
-            # If we didn't, the model would try backpropagating all the way to start of the dataset.
-            hidden[s_id] = repackage_hidden(hidden[s_id])
-            hidden_valid[s_id] = repackage_hidden(hidden_valid[s_id])
-
-            # architecture step
-            arch_optimizer.zero_grad()
-            arch_loss, _ = model._loss(hidden_valid[s_id], cur_data_valid, cur_targets_valid, domain_idx=0)
-            arch_loss.backward()
-            arch_optimizer.step()
+    @classmethod
+    def create(cls, *, apply_fn, params, opt_weights, opt_alpha, **kwargs):
+        opt_weihts_state = opt_weights.init(params)
+        opt_alpha_state = opt_alpha.init(params)
+        return cls(
+            step=0,
+            apply_fn=apply_fn,
+            params=params,
+            opt_weights=opt_weights,
+            opt_weights_state=opt_weihts_state,
+            opt_alpha=opt_alpha,
+            opt_alpha_state=opt_alpha_state,
+            **kwargs,
+        )
 
 
+state = RnnNasTrainState.create(apply_fn=model.apply,
+                                params=params['params'], batch_stats=params['batch_stats'],
+                                opt_weights=opt_weights,
+                                opt_alpha=opt_alpha,
+                                mask_2d=jax.random.PRNGKey(0),
+                                dropout=jax.random.PRNGKey(0),
+                                locked_dropout=jax.random.PRNGKey(0),
+                                params_key=jax.random.PRNGKey(0),
+                                )
 
-            # assuming small_batch_size = batch_size so we don't accumulate gradients
-            optimizer.zero_grad()
-            hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = model(cur_data, hidden[s_id], return_h=True)
-            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
+@jax.jit
+def train_step(state: RnnNasTrainState, batch):
+    """Performs training step
 
-            loss = raw_loss
-            # Activiation Regularization
-            if args.alpha > 0:
-              loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
-            # Temporal Activation Regularization (slowness)
-            loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
-            loss *= args.small_batch_size / args.batch_size
-            total_loss += raw_loss.data * args.small_batch_size / args.batch_size
-            loss.backward()
+    :param state: NasRnnState
+    :param batch: dict with keys: src_train, trg_train, src_val, trg_val, hidden_train, hidden_val
+    """
+    def loss_weights(params):
+        out, updates = state.apply_fn({'params': params, 'batch_stats': state.batch_stats},
+            batch['src_train'], batch['hidden_train'], batch['trg_train'], mutable=['batch_stats'],
+            rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
+            'locked_dropout': state.locked_dropout}, method=model._loss)
+        return out[0], updates
+    
+    # repeat yourself to avoid re-compilation
+    def loss_alpha(params):
+        out, updates = state.apply_fn({'params': params, 'batch_stats': state.batch_stats},
+            batch['src_val'], batch['hidden_val'], batch['trg_val'], mutable=['batch_stats'],
+            rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
+            'locked_dropout': state.locked_dropout}, method=model._loss)
+        return out[0], updates
+    
+    # update weights
+    grad_weights_fn = jax.value_and_grad(loss_weights, has_aux=True)
+    (loss_train, updates), grads = grad_weights_fn(state.params)
+    state = state.apply_gradients_weights(grads=grads)
+    state = state.replace(batch_stats=updates['batch_stats'])
 
-            s_id += 1
-            start = end
-            end = start + args.small_batch_size
+    # update alphas
+    grad_alpha_fn = jax.value_and_grad(loss_alpha, has_aux=True)
+    (loss_val, updates), grads = grad_alpha_fn(state.params)
+    state = state.apply_gradients_alpha(grads=grads)
+    state = state.replace(batch_stats=updates['batch_stats'])
 
-            gc.collect()
+    return state, {'loss_train': loss_train, 'loss_val': loss_val}
 
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        optimizer.step()
+# TODO: eval step and eval model for that. Same for test
 
-        optimizer.param_groups[0]['lr'] = lr2
-        if batch % args.log_interval == 0 and batch > 0:
-            logging.info(model.export())
-            cur_loss = total_loss.item() / args.log_interval
-            elapsed = time.time() - start_time
-            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
-            global global_step
-            writer.add_scalar('train/ppl', math.exp(cur_loss), global_step)
-            global_step += 1
-            total_loss = 0
-            start_time = time.time()
-        batch += 1
-        i += seq_len
+def train_epoch(state, epoch: int):
+    hidden_train = model.init_hidden(args.batch_size)
+    hidden_valid = model.init_hidden(eval_batch_size)
+    for i in range(train_data.shape[0] - 1 - args.bptt + 1):
+        # TODO: check that we no not need seq_len=... in get_batch
+        src_valid, trg_valid = get_batch(val_data, i, args)
+        src_train, trg_train = get_batch(train_data, i, args)
+        batch = {'src_train': src_train, 'trg_train': trg_train, 'src_val': src_valid, 'trg_val': trg_valid,
+            'hidden_train': hidden_train, 'hidden_val': hidden_valid}
+        start = time.time()
+        state, losses = train_step(state, batch)
+        elapsed = time.time() - start
+        logging.info('Train | epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
+                'loss {:5.2f} | ppl {:8.2f}'.format(
+            epoch, i, len(train_data) // args.bptt,
+            elapsed * 1000, losses['loss_train'].item(), math.exp(losses['loss_train'].item())))
+        writer.add_scalar('train/ppl_step', math.exp(losses['loss_train'].item()), state.step)
+        writer.add_scalar('val/ppl_step', math.exp(losses['loss_val'].item()), state.step)
+    return state
 
-# Loop over epochs.
-lr = args.lr
-best_val_loss = []
-stored_loss = 100000000
-writer = SummaryWriter(log_dir=args.save)
-global_step = 0
-
-optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
-
-for epoch in range(1, args.epochs+1):
-    epoch_start_time = time.time()
-    train()
-
-    val_loss = evaluate(val_data, eval_batch_size)
-    logging.info('-' * 89)
-    logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-            'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                       val_loss, math.exp(val_loss)))
-    writer.add_scalar('val/ppl', math.exp(val_loss))
-    logging.info('-' * 89)
-
-    if val_loss < stored_loss:
-        save_checkpoint(model, optimizer, epoch, args.save)
-        logging.info('Saving Normal!')
-        stored_loss = val_loss
-
-    best_val_loss.append(val_loss)
+for epoch in range(1, args.epochs + 1):
+    state = train_epoch(state, epoch)

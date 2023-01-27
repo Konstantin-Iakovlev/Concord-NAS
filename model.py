@@ -1,40 +1,39 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from genotypes import STEPS, PRIMITIVES, DARTS_V2, CONCAT
-from collections import OrderedDict
-from utils import mask2d
-from typing import List, Tuple, Optional
-from utils import LockedDropout
-from utils import embedded_dropout
+import flax
+import jax
+import jax.numpy as jnp
+import functools
+from jax import tree_util
+from jax.tree_util import register_pytree_node_class
+import functools
 
-from nni.retiarii.nn.pytorch import LayerChoice
-from nni.retiarii.oneshot.pytorch.utils import replace_layer_choice
-from ops import Operation
 
-INITRANGE = 0.04
+import jax
+from typing import Any, Callable, List, Sequence, Tuple
+from jax import lax, random, numpy as jnp
+from flax.core import freeze, unfreeze
+from flax import linen as nn
+import time
+import numpy as np
+
+from genotypes import STEPS, CONCAT, INITRANGE
+from utils import locked_dropout, mask2d
 
 
 class MdDartsRnnLayerChoice(nn.Module):
-    def __init__(self, layer_choice: LayerChoice,
-                 n_domains: int = 1,
-                 sampling_mode: str = 'softmax'):
-        """DARTS layer choice parametrized by alpha
+    # n_domains: int
+    num_prev_nodes: int
+    op_choices = {'relu': nn.relu,
+                  'tanh': nn.tanh,
+                  'none': lambda x: jnp.zeros_like(x),
+                  'sigmoid': nn.sigmoid,
+                  'identity': lambda x: x,
+                  }
 
-        :param layer_choice: layer choice
-        :param n_domains: number of domains, defaults to 1
-        :param sampling_mode: sampling mode, defaults to 'softmax'
-        """
-        super().__init__()
-        self.label = layer_choice.label
-        self.sampling_mode = sampling_mode
-        self.op_choices = nn.ModuleDict(OrderedDict(
-            [(name, layer_choice[name]) for name in layer_choice.names]))
-        num_prev_nodes = int(self.label[5:])
-        self.alpha = nn.ParameterList([torch.randn(num_prev_nodes, len(self.op_choices)) * 1e-3
-                                       for _ in range(n_domains)])
+    def setup(self):
+        self.alpha = self.param('alpha', lambda rng, shape: jax.random.normal(rng, shape) * 1e-3,
+                           (self.num_prev_nodes, len(self.op_choices)))
 
-    def forward(self, c: torch.Tensor, h: torch.Tensor, states: torch.Tensor, domain_idx: int = 1) -> torch.Tensor:
+    def __call__(self, c, h, states):
         """Performs forward pass
 
         :param c: tensor of shape (node_idx, batch_size, nhid)
@@ -43,26 +42,25 @@ class MdDartsRnnLayerChoice(nn.Module):
         :param domain_idx: domain index, defaults to 1
         :return: weightted output
         """
-        unweighted = torch.stack([states + c * (op(h) - states) for op in self.op_choices.values()],
-                                 dim=0)  # (num_ops, num_prev, *)
-        # TODO: add Gumbel-Softmax support
-        if self.sampling_mode == 'softmax':
-            weights = self.alpha[domain_idx].softmax(-1).t()
-            weights = weights.view(
-                list(weights.shape) + [1] * (len(unweighted.shape) - 2))
-        else:
-            raise NotImplementedError
 
-        weighted = (unweighted * weights).sum(dim=[0, 1])
+        unweighted = jnp.stack([states + c * (op(h) - states) for op in self.op_choices.values()],
+                                 axis=0)  # (num_ops, num_prev, *)
+        alpha = self.alpha
+        weights = nn.activation.softmax(alpha, axis=-1).transpose()
+        weights = weights.reshape(
+            list(weights.shape) + [1] * (len(unweighted.shape) - 2))
+
+        weighted = (unweighted * weights).sum(axis=[0, 1])
         return weighted
 
     def _export_single(self, domain_idx: int) -> Tuple[str, int]:
         """Performs a discretization of alpha of a specific domain
-
         :param domain_idx: domain index
         :return: tuple of name, previous node index
         """
-        W = self.alpha[domain_idx].detach().softmax(-1).cpu().numpy()
+        # TODO: add multidomain support
+        W = jax.nn.softmax(self.alpha, axis=-1)
+        W = np.asarray(W)
         none_idx = [i for i, name in enumerate(
             self.op_choices.keys()) if name == 'none'][0]
         W[:, none_idx] = -float('inf')
@@ -72,113 +70,54 @@ class MdDartsRnnLayerChoice(nn.Module):
 
     def export(self) -> List[Tuple[str, int]]:
         """Performs discretization of all alphas
-
         :return: discretized alphas: list of (name, prev_index) for each domain
         """
-        return [self._export_single(domain_idx) for domain_idx in range(len(self.alpha))]
-
-
-class MdOneHotRnnLayerChoice(nn.Module):
-    def __init__(self, layer_choice: LayerChoice, genotype: List[List[Tuple[str, int]]]):
-        """Discretized layer choice
-
-        :param layer_choice: layer choice
-        :param genotype: discretized alphas
-        """
-        super().__init__()
-        self.label = layer_choice.label
-        # save all candidate operations with no memory overhead
-        self.op_choices = nn.ModuleDict(OrderedDict(
-            [(name, layer_choice[name]) for name in layer_choice.names]))
-        self.node_idx = int(self.label[5:])  # in [1, 8]
-        self.genotype = genotype
-
-    def forward(self, c: torch.Tensor, h: torch.Tensor, states: torch.Tensor, domain_idx: int = 0) -> torch.Tensor:
-        """Performs forward pass
-
-        :param c: tensor of shape (node_idx, batch_size, nhid)
-        :param h: tensor of shape (node_idx, batch_size, nhid)
-        :param states: tensor of shape (node_idx, batch_size, nhid)
-        :param domain_idx: domain index, defaults to 1
-        :return: current state
-        """
-        name, prev_node_idx = self.genotype[domain_idx][self.node_idx - 1]
-        act_fn = self.op_choices[name]
-        out = states[prev_node_idx] + c[prev_node_idx] * (act_fn(h[prev_node_idx]) - states[prev_node_idx])
-        return out
-
-    def export(self):
-        """Performs export of the architecture
-
-        :return: genotype
-        """
-        return self.genotype
+        return [self._export_single(domain_idx) for domain_idx in range(1)]
 
 
 class MdRnnCell(nn.Module):
-    def __init__(self, ninp: int, nhid: int, dropouth: float, dropoutx: float, genotype=None,
-                 n_domains: int = 1):
-        """Multidomain RNN cell. Supports one-hot layer choice and DARTS layer choice
+    ninp: int
+    nhid: int
+    dropouth: float
+    dropoutx: float
+    training: bool
+    genotype: Any = None
 
-        :param ninp: input dim
-        :param nhid: hidden dim
-        :param dropouth: dropout for x
-        :param dropoutx: dropout for h
-        :param genotype: architecture if not performing search phase, defaults to None
-        :param n_domains: number of domains, defaults to 1
-        """
-        super(MdRnnCell, self).__init__()
-        self.nhid = nhid
-        self.dropouth = dropouth
-        self.dropoutx = dropoutx
-        self.genotype = genotype
-        self.n_domains = n_domains
+    def setup(self):
+        self._W0 = self.param('_W0', lambda key, shape: jax.random.normal(key, shape) * INITRANGE,
+                              (self.ninp + self.nhid, 2 * self.nhid)
+                              )
+        self._Ws = self.param('_Ws', lambda key, shape: jax.random.normal(key, shape) * INITRANGE,
+                              (STEPS, self.nhid, 2 * self.nhid)
+                              )
+        if self.genotype is None:
+            self.ops = [MdDartsRnnLayerChoice(num_prev_nodes=i + 1) for i in range(STEPS)]
+        if self.genotype is None:
+            # self.bn = [nn.BatchNorm() for _ in range(self.n_domains)]
+            # TODO: add many batch norms
+            self.bn = nn.BatchNorm()
 
-        self._W0 = nn.Parameter(torch.Tensor(
-            ninp + nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE))
-        self._Ws = nn.ParameterList([
-            nn.Parameter(torch.Tensor(nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE)) for _ in range(STEPS)
-        ])
-        self.ops = nn.ModuleList()
-        for node_idx in range(1, STEPS + 1):
-            self.ops.append(LayerChoice(
-                OrderedDict([(name, Operation(name)) for name in PRIMITIVES]),
-                label=f'node_{node_idx}'
-            ))
-
-        # replace layer choices
-        if self.genotype:  # perform fine-tuning phase
-            replace_layer_choice(
-                self, lambda lc: MdOneHotRnnLayerChoice(lc, self.genotype))
-        else:  # perform architecture search phase
-            replace_layer_choice(self, lambda lc: MdDartsRnnLayerChoice(lc, n_domains=n_domains,
-                                                                        sampling_mode='softmax'))
-
-        self.bn = nn.ModuleList(
-            [nn.BatchNorm1d(nhid, affine=False) for _ in range(n_domains)])
-
-    def _compute_init_state(self, x: torch.Tensor, h_prev: torch.Tensor,
-                            x_mask: torch.Tensor, h_mask: torch.Tensor) -> torch.Tensor:
+    def _compute_init_state(self, x, h_prev, x_mask, h_mask):
         """Computes initial state s0
 
         :param x: tensor of shape (bs, ninp)
         :param h_prev: tensor of shape (bs, nhid)
         :param x_mask: tensor of shape (bs, ninp)
         :param h_mask: tensor of shape (bs, nhid)
-        :return: tensor of shape (bs, nhid')
+        :return: tensor of shape (bs, nhid)
         """
         if self.training:
-            xh_prev = torch.cat([x * x_mask, h_prev * h_mask], dim=-1)
+            xh_prev = jnp.concatenate([x * x_mask, h_prev * h_mask], axis=-1)
         else:
-            xh_prev = torch.cat([x, h_prev], dim=-1)
-        c0, h0 = torch.split(xh_prev.mm(self._W0), self.nhid, dim=-1)
-        c0 = c0.sigmoid()
-        h0 = h0.tanh()
+            xh_prev = jnp.concatenate([x, h_prev], axis=-1)
+        c0, h0 = jnp.split(xh_prev @ self._W0, [self.nhid], axis=-1)
+        c0 = nn.activation.sigmoid(c0)
+        h0 = nn.activation.tanh(h0)
         s0 = h_prev + c0 * (h0 - h_prev)
         return s0
 
-    def cell(self, x: torch.Tensor, h_prev: torch.Tensor, x_mask: torch.Tensor,
-             h_mask: torch.Tensor, domain_idx: int = 0) -> torch.Tensor:
+    def __call__(self, carry, x):
+        """carry = (h_prev, x_mask, h_mask)"""
         """Performs forward cell pass
 
         :param x: tensor of shape (bs, ninp)
@@ -188,160 +127,164 @@ class MdRnnCell(nn.Module):
         :param domain_idx: domain index
         :return: mean of selected states
         """
+        h_prev, x_mask, h_mask = carry
         s0 = self._compute_init_state(x, h_prev, x_mask, h_mask)
+
         if self.genotype is None:  # disable batch norm when fine-tuning
-            s0 = self.bn[domain_idx](s0)
-        # TODO: note that we can speed up the forward pass during one-hot training like
-        # in the original implementation
+            s0 = self.bn(s0, use_running_average=not self.training)
         states = s0[None]
         for i in range(STEPS):
             if self.training:
                 masked_states = states * h_mask[None]
             else:
                 masked_states = states
-            ch = masked_states.view(-1, self.nhid).mm(
-                self._Ws[i]).view(i + 1, -1, 2 * self.nhid)
-            c, h = torch.split(ch, self.nhid, dim=-1)
-            c = c.sigmoid()
+  
+            ch = masked_states.reshape(-1, self.nhid) @ self._Ws[i]
+            ch = ch.reshape(i + 1, -1, 2 * self.nhid)
 
-            s = self.ops[i](c, h, states, domain_idx)
+            c, h = jnp.split(ch, [self.nhid], axis=-1)
+            c = nn.activation.sigmoid(c)
+
+            s = self.ops[i](c, h, states)
             if self.genotype is None:
-                s = self.bn[domain_idx](s)
+                s = self.bn(s, use_running_average=not self.training)
 
-            states = torch.cat([states, s[None]], dim=0)
+            states = jnp.concatenate([states, s[None]], axis=0)
+        new_hidden = jnp.mean(states[-CONCAT:], axis=0)
+        return (new_hidden, x_mask, h_mask), new_hidden
 
-        return torch.mean(states[-CONCAT:], dim=0)
 
-    def forward(self, inputs: torch.Tensor, hidden: torch.Tensor,
-                domain_idx: int = 0) -> Tuple[torch.Tensor, torch.Tensor]:
+class ScannedCell(nn.Module):
+    ninp: int
+    nhid: int
+    dropouth: float
+    dropoutx: float
+    training: bool
+    genotype: Any = None
+
+    @nn.compact
+    def __call__(self, carry, x):
+        is_init = 'batch_stats' not in self.variables
+
+        if is_init:
+            return MdRnnCell(self.ninp, self.nhid, self.dropouth,
+                              self.dropoutx, self.training, name='cell')(carry, x[0])
+        return nn.scan(MdRnnCell, variable_carry='batch_stats',
+                   variable_broadcast='params',
+                    in_axes=0, out_axes=0,
+                   split_rngs={'params': False})(self.ninp, self.nhid, self.dropouth,
+                              self.dropoutx, self.training, name='cell')(carry, x)
+    
+
+class MdRnn(nn.Module):
+    ninp: int
+    nhid: int
+    dropouth: float
+    dropoutx: float
+    training: bool
+    genotype: Any = None
+    rng_collection: str = 'mask_2d'
+
+    def setup(self):
+        self.cell = ScannedCell(self.ninp, self.nhid, self.dropouth, self.dropoutx,
+                                self.training,
+                              self.genotype)
+        
+    def __call__(self, inputs, hidden):
         """Performs forward RNN cell pass
 
         :param inputs: tensor of shape (seq_len, batch_size, ninp)
-        :param hidden: tensor of shape (1, batch_size, nhid)
+        :param hidden: tensor of shape (batch_size, nhid)
         :param domain_idx: domain index
         :return: tuple of all hiiden states, last hidden state
         """
-        seq_len, batch_size = inputs.size(0), inputs.size(1)
-        if self.training:
-            x_mask = mask2d(batch_size, inputs.size(2),
-                            keep_prob=1. - self.dropoutx).to(next(self.parameters()).device)
-            h_mask = mask2d(batch_size, hidden.size(2),
-                            keep_prob=1. - self.dropouth).to(next(self.parameters()).device)
-        else:
-            x_mask = h_mask = None
-
-        hidden = hidden[0]
-        hiddens = []
-        for t in range(seq_len):
-            hidden = self.cell(inputs[t], hidden, x_mask, h_mask, domain_idx)
-            hiddens.append(hidden)
-        hiddens = torch.stack(hiddens)
-        return hiddens, hiddens[-1].unsqueeze(0)
-
+        seq_len, batch_size = inputs.shape[0], inputs.shape[1]
+        x_mask = mask2d(batch_size, inputs.shape[-1],
+                        1. - self.dropoutx, self.make_rng(self.rng_collection))
+        h_mask = mask2d(batch_size, hidden.shape[-1],
+                            1. - self.dropouth, self.make_rng(self.rng_collection))
+        
+        return self.cell((hidden, x_mask, h_mask), inputs)
+    
     def export(self) -> List[List[Tuple[str, int]]]:
         """Performs architecture discretization
-
         :return: architectures for each domain
         """
         if self.genotype:
             return self.genotype
-        nodes_genotypes = [node.export() for node in self.ops]
-        return [[g[domain_idx] for g in nodes_genotypes] for domain_idx in range(self.n_domains)]
+        nodes_genotypes = [node.export() for node in self.cell.ops]
+        return [[g[domain_idx] for g in nodes_genotypes] for domain_idx in range(1)]
 
-
+            
 class MdRnnModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
+    ntoken: int
+    ninp: int
+    nhid: int
+    nhidlast: int
+    training: bool
+    dropout: float = 0.5
+    dropouth: float = 0.5
+    dropoutx: float = 0.5
+    dropouti: float = 0.5
+    dropoute: float = 0.1
+    genotype: Any = None
+    rng_collection: str = 'locked_dropout'
 
-    def __init__(self, ntoken, ninp, nhid, nhidlast,
-                 dropout=0.5, dropouth=0.5, dropoutx=0.5, dropouti=0.5, dropoute=0.1, genotype=None,
-                 n_domains: int = 1):
-        super(MdRnnModel, self).__init__()
-        self.lockdrop = LockedDropout()
-        self.encoder = nn.Embedding(ntoken, ninp)
+    def setup(self):
+        self.encoder = nn.Embed(self.ntoken, self.ninp,
+                                embedding_init=lambda key, shape, dtype:
+                                    jax.random.uniform(key, shape, dtype) * INITRANGE * 2 - INITRANGE)
+        assert self.ninp == self.nhid == self.nhidlast
 
-        assert ninp == nhid == nhidlast
-        self.genotype = genotype
-        self.n_domains = n_domains
-        self.rnn = MdRnnCell(ninp, nhid, dropouth,
-                             dropoutx, genotype, n_domains)
-        self.decoder = nn.Linear(ninp, ntoken)
-        self.decoder.weight = self.encoder.weight
-        self.init_weights()
+        self.rnn = MdRnn(self.ninp, self.nhid, self.dropouth, self.dropoutx,
+                         self.training, self.genotype)
+        
+        self.decoder = nn.Dense(self.ntoken, use_bias=False)  # TODO: note that we do not use bias
+        self.embedded_dropout = nn.Dropout(rate=self.dropoute)
 
-        self.ninp = ninp
-        self.nhid = nhid
-        self.nhidlast = nhidlast
-        self.dropout = dropout
-        self.dropouti = dropouti
-        self.dropoute = dropoute
-        self.ntoken = ntoken
+    def __call__(self, input, hidden):
+        """
+        returns: (seq_len, bs, ntokens), (bs, nhid), [(seq_len, bs, nhid)], same
+        """
+        batch_size = input.shape[1]
 
-    def init_weights(self):
-        self.encoder.weight.data.uniform_(-INITRANGE, INITRANGE)
-        self.decoder.bias.data.fill_(0)
-        # extra line, because Enc and Dec are tied
-        self.decoder.weight.data.uniform_(-INITRANGE, INITRANGE)
+        emb = self.encoder(input)
+        emb = self.embedded_dropout(emb, deterministic=not self.training)
+        emb = locked_dropout(emb, self.training, self.make_rng(self.rng_collection),
+                             self.dropouti)
 
-    def forward(self, input: torch.Tensor, hidden: List[torch.Tensor], domain_idx: int = 0,
-                return_h: bool = False):
-        batch_size = input.size(1)
-
-        emb = embedded_dropout(self.encoder, input,
-                               dropout=self.dropoute if self.training else 0)
-        emb = self.lockdrop(emb, self.dropouti)
 
         raw_output = emb
-        new_hidden = []
         raw_outputs = []
         outputs = []
-        raw_output, new_h = self.rnn(raw_output, hidden[0], domain_idx)
-        new_hidden.append(new_h)
+        raw_output = self.rnn(raw_output, hidden)[1]
         raw_outputs.append(raw_output)
-        hidden = new_hidden
 
-        output = self.lockdrop(raw_output, self.dropout)
+        output = locked_dropout(raw_output, self.training, self.make_rng(self.rng_collection),
+                                self.dropout)
         outputs.append(output)
 
-        logit = self.decoder(output.view(-1, self.ninp))
-        log_prob = nn.functional.log_softmax(logit, dim=-1)
+        # weight sharing between encoder and decoder
+        dec_kernel = self.variables['params']['encoder']['embedding'].T
+        logit = self.decoder.apply({'params': {'kernel': dec_kernel}},
+                                   output.reshape(-1, self.ninp))
+        log_prob = nn.activation.log_softmax(logit, axis=-1)
         model_output = log_prob
-        model_output = model_output.view(-1, batch_size, self.ntoken)
+        model_output = model_output.reshape(-1, batch_size, self.ntoken)
 
-        if return_h:
-            return model_output, hidden, raw_outputs, outputs
-        return model_output, hidden
+        return model_output, hidden, raw_outputs, outputs
 
-    def _loss(self, hidden: List[torch.Tensor], input: torch.Tensor, target: torch.LongTensor,
-              domain_idx: int = 0) -> torch.Tensor:
-        log_prob, hidden_next = self(
-            input, hidden, domain_idx=domain_idx, return_h=False)
-        loss = nn.functional.nll_loss(
-            log_prob.view(-1, log_prob.size(2)), target)
+    def _loss(self, input, hidden, target):
+        log_prob, hidden_next, _, _ = self(input, hidden)
+        loss = -jnp.take_along_axis(log_prob.reshape(-1, log_prob.shape[-1]),
+                                   target.reshape(-1)[..., None], axis=-1).mean()
         return loss, hidden_next
-
+    
     def init_hidden(self, batch_size: int):
-        device = next(self.parameters()).device
-        return [torch.zeros(1, batch_size, self.nhid).to(device)]
-
-    def parameters(self):
-        for _, p in self.named_parameters():
-            yield p
-
-    def named_parameters(self):
-        for name, p in super(MdRnnModel, self).named_parameters():
-            if 'alpha' in name:
-                continue
-            yield name, p
-
-    def struct_named_parameters(self):
-        for name, p in super(MdRnnModel, self).named_parameters():
-            if 'alpha' in name:
-                yield name, p
-
-    def struct_parameters(self):
-        for _, p in self.struct_named_parameters():
-            yield p
+        return jnp.zeros((batch_size, self.nhid))
 
     def export(self):
+        # TODO: implement another export. Attribute rnn is not accessible from this scope
         return self.rnn.export()
 

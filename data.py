@@ -1,5 +1,6 @@
 import os
-import torch
+import jax.numpy as jnp
+import numpy as np
 
 from collections import Counter
 
@@ -31,7 +32,7 @@ class Corpus(object):
         self.valid = self.tokenize(os.path.join(path, 'valid.txt'))
         self.test = self.tokenize(os.path.join(path, 'test.txt'))
 
-    def tokenize(self, path):
+    def tokenize(self, path: str) -> np.array:
         """Tokenizes a text file."""
         assert os.path.exists(path)
         # Add words to the dictionary
@@ -45,7 +46,7 @@ class Corpus(object):
 
         # Tokenize file content
         with open(path, 'r', encoding='utf-8') as f:
-            ids = torch.LongTensor(tokens)
+            ids = np.zeros(tokens, dtype=np.int32)
             token = 0
             for line in f:
                 words = line.split() + ['<eos>']
@@ -81,7 +82,7 @@ class SentCorpus(object):
                 if not line:
                     continue
                 words = line.split() + ['<eos>']
-                sent = torch.LongTensor(len(words))
+                sent = np.zeros(len(words))
                 for i, word in enumerate(words):
                     sent[i] = self.dictionary.word2idx[word]
                 sents.append(sent)
@@ -92,7 +93,7 @@ class BatchSentLoader(object):
     def __init__(self, sents, batch_size, pad_id=0, cuda=False, volatile=False):
         self.sents = sents
         self.batch_size = batch_size
-        self.sort_sents = sorted(sents, key=lambda x: x.size(0))
+        self.sort_sents = sorted(sents, key=lambda x: x.shape[0])
         self.cuda = cuda
         self.volatile = volatile
         self.pad_id = pad_id
@@ -103,13 +104,11 @@ class BatchSentLoader(object):
 
         batch_size = min(self.batch_size, len(self.sort_sents)-self.idx)
         batch = self.sort_sents[self.idx:self.idx+batch_size]
-        max_len = max([s.size(0) for s in batch])
-        tensor = torch.LongTensor(max_len, batch_size).fill_(self.pad_id)
+        max_len = max([s.shape[0] for s in batch])
+        tensor = np.full((max_len, batch_size), self.pad_id, dtype=np.int32)
         for i in range(len(batch)):
             s = batch[i]
-            tensor[:s.size(0),i].copy_(s)
-        if self.cuda:
-            tensor = tensor
+            tensor[:s.shape[0], i] = s
 
         self.idx += batch_size
 
