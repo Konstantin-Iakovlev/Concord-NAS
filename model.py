@@ -84,18 +84,17 @@ class MdRnnCell(nn.Module):
     genotype: Any = None
 
     def setup(self):
-        self._W0 = self.param('_W0', lambda key, shape: jax.random.normal(key, shape) * INITRANGE,
+        self._W0 = self.param('_W0', lambda key, shape: jax.random.uniform(key, shape) * 2 * INITRANGE - INITRANGE,
                               (self.ninp + self.nhid, 2 * self.nhid)
                               )
-        self._Ws = self.param('_Ws', lambda key, shape: jax.random.normal(key, shape) * INITRANGE,
+        self._Ws = self.param('_Ws', lambda key, shape: jax.random.uniform(key, shape) * 2 * INITRANGE - INITRANGE,
                               (STEPS, self.nhid, 2 * self.nhid)
                               )
         if self.genotype is None:
             self.ops = [MdDartsRnnLayerChoice(num_prev_nodes=i + 1) for i in range(STEPS)]
         if self.genotype is None:
-            # self.bn = [nn.BatchNorm() for _ in range(self.n_domains)]
-            # TODO: add many batch norms
-            self.bn = nn.BatchNorm()
+            # affine = False
+            self.bn = nn.BatchNorm(use_bias=False, use_scale=False)
 
     def _compute_init_state(self, x, h_prev, x_mask, h_mask):
         """Computes initial state s0
@@ -229,7 +228,8 @@ class MdRnnModel(nn.Module):
     dropouti: float = 0.5
     dropoute: float = 0.1
     genotype: Any = None
-    rng_collection: str = 'locked_dropout'
+    rng_collection_emb: str = 'locked_dropout_emb'
+    rng_collection_out: str = 'locked_dropout_out'
 
     def setup(self):
         self.encoder = nn.Embed(self.ntoken, self.ninp,
@@ -250,8 +250,8 @@ class MdRnnModel(nn.Module):
         batch_size = input.shape[1]
 
         emb = self.encoder(input)
-        emb = self.embedded_dropout(emb, deterministic=not self.training)
-        emb = locked_dropout(emb, self.training, self.make_rng(self.rng_collection),
+        # emb = self.embedded_dropout(emb, deterministic=not self.training)  # Embed dropout = 0 always
+        emb = locked_dropout(emb, self.training, self.make_rng(self.rng_collection_emb),
                              self.dropouti)
 
 
@@ -261,7 +261,7 @@ class MdRnnModel(nn.Module):
         raw_output = self.rnn(raw_output, hidden)[1]
         raw_outputs.append(raw_output)
 
-        output = locked_dropout(raw_output, self.training, self.make_rng(self.rng_collection),
+        output = locked_dropout(raw_output, self.training, self.make_rng(self.rng_collection_out),
                                 self.dropout)
         outputs.append(output)
 

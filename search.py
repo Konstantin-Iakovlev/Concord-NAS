@@ -129,24 +129,26 @@ bs = 4
 inp = jnp.ones((seq_len, bs), dtype=jnp.int32)
 hidden = jax.random.normal(key, (bs, args.emsize))
 
-params = model.init({'locked_dropout': key, 'dropout': key, 'params': key,
+params = model.init({'locked_dropout_emb': key, 'locked_dropout_out': key, 'dropout': key, 'params': key,
                      'mask_2d': key}, inp, hidden)
-print(jax.tree_map(lambda x: x.shape, params))
-print(model.apply(params, inp, hidden, rngs={'locked_dropout': key, 'dropout': key, 'params': key,
-                     'mask_2d': key}, mutable='batch_stats')[0][0].shape)
+# print(jax.tree_map(lambda x: x.shape, params))
+print(model.apply(params, inp, hidden, rngs={'locked_dropout_emb': key, 'locked_dropout_out': key,
+                                             'dropout': key, 'params': key,
+                                             'mask_2d': key}, mutable='batch_stats')[0][0].shape)
 
 logging.info('initial genotype:')
 # logging.info(model.export())
 
 opt_weights = optax.masked(optax.chain(optax.clip_by_global_norm(args.clip),
                                        optax.add_decayed_weights(args.wdecay), optax.sgd(args.lr)),
-                                       jax.tree_util.tree_map(lambda x: x.shape[-1] != STEPS, params['params']))
+                           jax.tree_util.tree_map(lambda x: x.shape[-1] != 5, params['params']))
 
 # TODO: add unroll (note that it give minor performance gain)
 opt_alpha = optax.masked(optax.chain(optax.add_decayed_weights(args.arch_wdecay), optax.adam(args.arch_lr)),
-                         jax.tree_util.tree_map(lambda x: x.shape[-1] == STEPS, params['params']))
+                         jax.tree_util.tree_map(lambda x: x.shape[-1] == 5, params['params']))
 
 writer = SummaryWriter(args.save)
+
 
 class RnnNasTrainState(flax.struct.PyTreeNode):
     step: int
@@ -160,7 +162,8 @@ class RnnNasTrainState(flax.struct.PyTreeNode):
     batch_stats: Any
     mask_2d: jax.random.KeyArray
     dropout: jax.random.KeyArray
-    locked_dropout: jax.random.KeyArray
+    locked_dropout_emb: jax.random.KeyArray
+    locked_dropout_out: jax.random.KeyArray
     params_key: jax.random.KeyArray
 
     def apply_gradients_weights(self, *, grads, **kwargs):
@@ -196,10 +199,13 @@ state = RnnNasTrainState.create(apply_fn=model.apply,
                                 params=params['params'], batch_stats=params['batch_stats'],
                                 opt_weights=opt_weights,
                                 opt_alpha=opt_alpha,
-                                mask_2d=jax.random.PRNGKey(0),
-                                dropout=jax.random.PRNGKey(0),
-                                locked_dropout=jax.random.PRNGKey(0),
-                                params_key=jax.random.PRNGKey(0),
+                                mask_2d=jax.random.PRNGKey(args.seed),
+                                dropout=jax.random.PRNGKey(args.seed + 1),
+                                locked_dropout_emb=jax.random.PRNGKey(
+                                    args.seed + 2),
+                                locked_dropout_out=jax.random.PRNGKey(
+                                    args.seed + 3),
+                                params_key=jax.random.PRNGKey(args.seed + 4),
                                 )
 
 
@@ -210,56 +216,84 @@ def train_step(state: RnnNasTrainState, batch):
     :param state: NasRnnState
     :param batch: dict with keys: src_train, trg_train, src_val, trg_val, hidden_train, hidden_val
     """
+    dropout = jax.random.fold_in(key=state.dropout, data=state.step)
+    mask_2d = jax.random.fold_in(key=state.mask_2d, data=state.step)
+    locked_dropout_emb = jax.random.fold_in(
+        key=state.locked_dropout_emb, data=state.step)
+    locked_dropout_out = jax.random.fold_in(
+        key=state.locked_dropout_out, data=state.step)
+    # TODO: reomove "params" from apply function
+    # TODO: decouple alphas and weights for significant speedup
+
     def loss_weights(params):
         out, updates = state.apply_fn({'params': params, 'batch_stats': state.batch_stats},
-            batch['src_train'], batch['hidden_train'], batch['trg_train'], mutable=['batch_stats'],
-            rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
-            'locked_dropout': state.locked_dropout}, method=model._loss)
+                                      batch['src_train'], batch['hidden_train'], batch['trg_train'], mutable=[
+                                          'batch_stats'],
+                                      rngs={'dropout': dropout, 'mask_2d': mask_2d, 'params': state.params_key,
+                                            'locked_dropout_emb': locked_dropout_emb, 'locked_dropout_out': locked_dropout_out}, method=model._loss)
         return out[0], updates
-    
+
     # repeat yourself to avoid re-compilation
+    dropout = jax.random.fold_in(key=dropout, data=state.step)
+    mask_2d = jax.random.fold_in(key=mask_2d, data=state.step)
+    locked_dropout_emb = jax.random.fold_in(
+        key=locked_dropout_emb, data=state.step)
+    locked_dropout_out = jax.random.fold_in(
+        key=locked_dropout_out, data=state.step)
+
     def loss_alpha(params):
         out, updates = state.apply_fn({'params': params, 'batch_stats': state.batch_stats},
-            batch['src_val'], batch['hidden_val'], batch['trg_val'], mutable=['batch_stats'],
-            rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
-            'locked_dropout': state.locked_dropout}, method=model._loss)
+                                      batch['src_val'], batch['hidden_val'], batch['trg_val'], mutable=[
+                                          'batch_stats'],
+                                      rngs={'dropout': dropout, 'mask_2d': mask_2d, 'params': state.params_key,
+                                            'locked_dropout_emb': locked_dropout_emb, 'locked_dropout_out': locked_dropout_out},
+                                      method=model._loss)
         return out[0], updates
-    
+
     # update weights
     grad_weights_fn = jax.value_and_grad(loss_weights, has_aux=True)
     (loss_train, updates), grads = grad_weights_fn(state.params)
-    state = state.apply_gradients_weights(grads=grads)
+    # manually zero alphas grads
+    masked_grads = jax.tree_util.tree_map(lambda x: 0 if x.shape[-1] == 5 else x, grads)
+    state = state.apply_gradients_weights(grads=masked_grads)
     state = state.replace(batch_stats=updates['batch_stats'])
 
     # update alphas
     grad_alpha_fn = jax.value_and_grad(loss_alpha, has_aux=True)
     (loss_val, updates), grads = grad_alpha_fn(state.params)
-    state = state.apply_gradients_alpha(grads=grads)
+    # manually mask weights grads
+    masked_grads = jax.tree_util.tree_map(lambda x: 0 if x.shape[-1] != 5 else x, grads)
+    state = state.apply_gradients_alpha(grads=masked_grads)
     state = state.replace(batch_stats=updates['batch_stats'])
 
     return state, {'loss_train': loss_train, 'loss_val': loss_val}
 
 # TODO: eval step and eval model for that. Same for test
 
-def train_epoch(state, epoch: int):
+
+def train_epoch(state: RnnNasTrainState, epoch: int):
     hidden_train = model.init_hidden(args.batch_size)
-    hidden_valid = model.init_hidden(eval_batch_size)
+    hidden_valid = model.init_hidden(args.batch_size)
     for i in range(train_data.shape[0] - 1 - args.bptt + 1):
         # TODO: check that we no not need seq_len=... in get_batch
-        src_valid, trg_valid = get_batch(val_data, i, args)
+        src_valid, trg_valid = get_batch(search_data, i, args)
         src_train, trg_train = get_batch(train_data, i, args)
         batch = {'src_train': src_train, 'trg_train': trg_train, 'src_val': src_valid, 'trg_val': trg_valid,
-            'hidden_train': hidden_train, 'hidden_val': hidden_valid}
+                 'hidden_train': hidden_train, 'hidden_val': hidden_valid}
         start = time.time()
         state, losses = train_step(state, batch)
         elapsed = time.time() - start
+        loss_train = min(losses['loss_train'].item(), 50)
+        loss_val = min(losses['loss_val'].item(), 50)
         logging.info('Train | epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
-                'loss {:5.2f} | ppl {:8.2f}'.format(
-            epoch, i, len(train_data) // args.bptt,
-            elapsed * 1000, losses['loss_train'].item(), math.exp(losses['loss_train'].item())))
-        writer.add_scalar('train/ppl_step', math.exp(losses['loss_train'].item()), state.step)
-        writer.add_scalar('val/ppl_step', math.exp(losses['loss_val'].item()), state.step)
+                     'loss {:5.2f} | ppl {:8.2f}'.format(
+                         epoch, i, len(train_data) // args.bptt,
+                         elapsed * 1000, loss_train, math.exp(loss_train)))
+        writer.add_scalar('train/ppl_step', math.exp(loss_train), state.step)
+        writer.add_scalar('val/ppl_step', math.exp(loss_val), state.step)
+        # print(jax.tree_util.tree_map(lambda x: jnp.abs(x).mean(), state.params))
     return state
+
 
 for epoch in range(1, args.epochs + 1):
     state = train_epoch(state, epoch)

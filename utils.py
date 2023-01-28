@@ -11,7 +11,7 @@ def mask2d(B, D, keep_prob, key):
 def locked_dropout(x: jnp.array, training: bool, key, dropout: float=0.5):
     if not training:
         return x
-    mask = jax.random.bernoulli(key, 1 - dropout, x.shape[1:])[None]
+    mask = jax.random.bernoulli(key, p=1 - dropout, shape=x.shape[1:])[None] / (1 - dropout)
     return x * mask
 
 
