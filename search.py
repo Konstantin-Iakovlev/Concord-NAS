@@ -1,5 +1,6 @@
 import argparse
 import glob
+import json
 import math
 from utils import create_exp_dir, get_batch
 import time
@@ -27,6 +28,9 @@ from typing import Any, Callable
 
 from flax import core, struct
 from tensorboardX import SummaryWriter
+from model import export_single_architectute
+import numpy as np
+from tqdm import tqdm
 
 
 parser = argparse.ArgumentParser(
@@ -116,11 +120,12 @@ test_data = batchify(corpus.test, test_batch_size)
 
 
 ntokens = len(corpus.dictionary)
-model = MdRnnModel(ntoken=ntokens, ninp=args.emsize, nhid=args.nhid, nhidlast=args.nhidlast,
-                   training=True, dropout=args.dropout, dropouth=args.dropouth, dropoutx=args.dropoutx,
-                   dropouti=args.dropouti, dropoute=args.dropoute, genotype=None)
 
-# initialize a model
+models = [MdRnnModel(ntoken=ntokens, ninp=args.emsize, nhid=args.nhid, nhidlast=args.nhidlast,
+                   training=training, dropout=args.dropout, dropouth=args.dropouth, dropoutx=args.dropoutx,
+                   dropouti=args.dropouti, dropoute=args.dropoute, genotype=None) for training in [True, False]]
+model, eval_model = models
+# initialize a models
 key = jax.random.PRNGKey(0)
 
 seq_len = 10
@@ -131,13 +136,16 @@ hidden = jax.random.normal(key, (bs, args.emsize))
 
 params = model.init({'locked_dropout_emb': key, 'locked_dropout_out': key, 'dropout': key, 'params': key,
                      'mask_2d': key}, inp, hidden)
+_ = eval_model.init({'locked_dropout_emb': key, 'locked_dropout_out': key, 'dropout': key, 'params': key,
+                     'mask_2d': key}, inp, hidden)
 # print(jax.tree_map(lambda x: x.shape, params))
 print(model.apply(params, inp, hidden, rngs={'locked_dropout_emb': key, 'locked_dropout_out': key,
                                              'dropout': key, 'params': key,
                                              'mask_2d': key}, mutable='batch_stats')[0][0].shape)
 
+logging.info('Args: {}'.format(args))
 logging.info('initial genotype:')
-# logging.info(model.export())
+logging.info(export_single_architectute(params))
 
 opt_weights = optax.masked(optax.chain(optax.clip_by_global_norm(args.clip),
                                        optax.add_decayed_weights(args.wdecay), optax.sgd(args.lr)),
@@ -231,7 +239,10 @@ def train_step(state: RnnNasTrainState, batch):
                                           'batch_stats'],
                                       rngs={'dropout': dropout, 'mask_2d': mask_2d, 'params': state.params_key,
                                             'locked_dropout_emb': locked_dropout_emb, 'locked_dropout_out': locked_dropout_out}, method=model._loss)
-        return out[0], updates
+        # add regularizer. Note that raw_outputs is [single_tensor]
+        raw_outs = out[-1]
+        reg_loss = jnp.stack([jnp.power(rnn_h[1:] - rnn_h[:-1], 2).mean() for rnn_h in raw_outs]).sum()
+        return out[0] + args.beta * reg_loss, updates
 
     # repeat yourself to avoid re-compilation
     dropout = jax.random.fold_in(key=dropout, data=state.step)
@@ -252,7 +263,7 @@ def train_step(state: RnnNasTrainState, batch):
 
     # update weights
     grad_weights_fn = jax.value_and_grad(loss_weights, has_aux=True)
-    (loss_train, updates), grads = grad_weights_fn(state.params)
+    (loss_train, updates), grads = grad_weights_fn(state.params)  # loss w/ regularizer
     # manually zero alphas grads
     masked_grads = jax.tree_util.tree_map(lambda x: 0 if x.shape[-1] == 5 else x, grads)
     state = state.apply_gradients_weights(grads=masked_grads)
@@ -271,10 +282,21 @@ def train_step(state: RnnNasTrainState, batch):
 # TODO: eval step and eval model for that. Same for test
 
 
+@jax.jit
+def val_step(state: RnnNasTrainState, batch):
+    out, _ = eval_model.apply({'params': state.params, 'batch_stats': state.batch_stats},
+                                    batch['src_val'], batch['hidden_val'], batch['trg_val'], mutable=[
+                                        'batch_stats'],
+                                    rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
+                                        'locked_dropout_emb': state.locked_dropout_emb, 'locked_dropout_out': state.locked_dropout_out},
+                                        method=eval_model._loss)
+    return out[0]
+
+
 def train_epoch(state: RnnNasTrainState, epoch: int):
     hidden_train = model.init_hidden(args.batch_size)
     hidden_valid = model.init_hidden(args.batch_size)
-    for i in range(train_data.shape[0] - 1 - args.bptt + 1):
+    for i in range(0, train_data.shape[0] - 1 - args.bptt + 1, args.bptt):
         # TODO: check that we no not need seq_len=... in get_batch
         src_valid, trg_valid = get_batch(search_data, i, args)
         src_train, trg_train = get_batch(train_data, i, args)
@@ -287,13 +309,35 @@ def train_epoch(state: RnnNasTrainState, epoch: int):
         loss_val = min(losses['loss_val'].item(), 50)
         logging.info('Train | epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
                      'loss {:5.2f} | ppl {:8.2f}'.format(
-                         epoch, i, len(train_data) // args.bptt,
+                         epoch, i // args.bptt + 1, len(train_data) // args.bptt,
                          elapsed * 1000, loss_train, math.exp(loss_train)))
+        logging.info(export_single_architectute({'params': state.params}))
         writer.add_scalar('train/ppl_step', math.exp(loss_train), state.step)
         writer.add_scalar('val/ppl_step', math.exp(loss_val), state.step)
-        # print(jax.tree_util.tree_map(lambda x: jnp.abs(x).mean(), state.params))
     return state
+
+
+def val_epoch(state: RnnNasTrainState, epoch: int):
+    hidden_valid = model.init_hidden(eval_batch_size)
+    total_loss = 0.0
+    # Note that here we keep the last small batch
+    for i in tqdm(range(0, val_data.shape[0] - 1, args.bptt), leave=False):
+        src_valid, trg_valid = get_batch(val_data, i, args)
+        batch = {'src_val': src_valid, 'hidden_val': hidden_valid, 'trg_val': trg_valid}
+        loss_val = val_step(state, batch)
+        total_loss += loss_val.item() * src_valid.shape[0]
+    
+    mean_loss = min(total_loss / val_data.shape[0], 50)
+    logging.info('| end of epoch {:3d} | valid loss {:5.2f} | '
+            'valid ppl {:8.2f}'.format(epoch, mean_loss, math.exp(mean_loss)))
+    writer.add_scalar('val/ppl_epoch', math.exp(mean_loss), state.step)
+    return mean_loss
 
 
 for epoch in range(1, args.epochs + 1):
     state = train_epoch(state, epoch)
+    val_epoch(state, epoch)
+
+# export architecture
+with open(os.path.join(args.save, 'final_architecture.json'), 'w') as fout:
+    fout.write(json.dumps(export_single_architectute({'params': state.params})))

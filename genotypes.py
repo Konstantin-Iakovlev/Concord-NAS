@@ -8,3 +8,4 @@ STEPS = 8
 CONCAT = 8
 INITRANGE = 0.02
 
+DARTS_V1 = [('relu', 0), ('relu', 1), ('tanh', 2), ('relu', 3), ('relu', 4), ('identity', 1), ('relu', 5), ('relu', 1)]
