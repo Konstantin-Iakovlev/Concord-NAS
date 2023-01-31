@@ -296,23 +296,26 @@ class MdDartsTrainer(DartsTrainer):
                 self.curr_domain = domain_idx
 
                 self.another_domain = np.random.choice(len(self.datasets))
+                tr_an_X, tr_an_y = train_objects[self.another_domain]
+                tr_an_X = to_device(tr_an_X, self.device)
+                tr_an_y = to_device(tr_an_y, self.device)
+                
+
                 an_X, an_y = valid_objects[self.another_domain]
                 an_X = to_device(an_X, self.device)
                 an_y = to_device(an_y, self.device)
-                self.another_batch = {'x': an_X, 'y': an_y}
+                
 
                 # phase 1. architecture step
                 if self.unrolled:
-                    self._unrolled_backward(trn_X, trn_y, val_X, val_y)
+                    self._unrolled_backward(trn_X, trn_y, val_X, val_y, tr_an_X, tr_an_y, an_X, an_y)
                 else:
+                    self.another_batch = {'x': an_X, 'y': an_y}
                     self._backward(val_X, val_y)
 
                 # phase 2: child network step
                 # TODO: note that contrastive loss depends on w and alpha => we may need to remove in from valid loss
-                an_X, an_y = train_objects[self.another_domain]
-                an_X = to_device(an_X, self.device)
-                an_y = to_device(an_y, self.device)
-                self.another_batch = {'x': an_X, 'y': an_y}
+                self.another_batch = {'x': tr_an_X, 'y': tr_an_y}
 
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
                 if step == 0:
@@ -389,7 +392,7 @@ class MdDartsTrainer(DartsTrainer):
                 result[name] = module.export(domain_idx)
         return result
 
-    def _unrolled_backward(self, trn_X, trn_y, val_X, val_y):
+    def _unrolled_backward(self, trn_X, trn_y, val_X, val_y, tr_an_X, tr_an_Y, an_X, an_Y):
         """
         Compute unrolled loss and backward its gradients
         """
@@ -399,10 +402,12 @@ class MdDartsTrainer(DartsTrainer):
         lr = self.model_optim.param_groups[0]["lr"]
         momentum = self.model_optim.param_groups[0]["momentum"]
         weight_decay = self.model_optim.param_groups[0]["weight_decay"]
+        self.another_batch={'X':tr_an_X, 'Y': tr_an_Y}
         self._compute_virtual_model(trn_X, trn_y, lr, momentum, weight_decay)
 
         # calculate unrolled loss on validation data
         # keep gradients for model here for compute hessian
+        self.another_batch={'X': an_X, 'Y': an_Y}
         _, loss = self._logits_and_loss(val_X, val_y)
         w_model, w_ctrl = tuple(self.model.parameters()), \
             tuple([p for _, c in self.nas_modules for p in c.alpha.parameters()])
