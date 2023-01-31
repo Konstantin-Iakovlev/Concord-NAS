@@ -59,6 +59,8 @@ parser.add_argument('--dropoute', type=float, default=0.1,
                     help='dropout to remove words from embedding layer (0 = no dropout)')
 parser.add_argument('--seed', type=int, default=1267,
                     help='random seed')
+parser.add_argument('--nonmo', type=int, default=5,
+                    help='non-monotone interval')
 parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                     help='report interval')
 parser.add_argument('--save', type=str,  default='EXP',
@@ -203,14 +205,17 @@ def val_step(state: RnnRetrainTrainState, batch):
     return out[0]
 
 
-def train_epoch(state: RnnRetrainTrainState, epoch: int):
+def train_epoch(state: RnnRetrainTrainState, epoch: int, average_ckpts: bool = False):
     hidden_train = model.init_hidden(args.batch_size)
+    avg_params = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), state.params)
     for i in range(0, train_data.shape[0] - 1 - args.bptt + 1, args.bptt):
         # TODO: check that we no not need seq_len=... in get_batch
         src_train, trg_train = get_batch(train_data, i, args)
         batch = {'src_train': src_train, 'trg_train': trg_train, 'hidden_train': hidden_train}
         start = time.time()
         state, losses = train_step(state, batch)
+        if average_ckpts:
+            avg_params = optax.incremental_update(state.params, avg_params, 1 / (i // args.bptt + 1))
         elapsed = time.time() - start
         loss_train = min(losses['loss_train'].item(), 50)
         logging.info('Train | epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | '
@@ -218,7 +223,7 @@ def train_epoch(state: RnnRetrainTrainState, epoch: int):
                          epoch, i // args.bptt + 1, len(train_data) // args.bptt,
                          elapsed * 1000, loss_train, math.exp(loss_train)))
         writer.add_scalar('train/ppl_step', math.exp(loss_train), state.step)
-    return state
+    return state, avg_params
 
 
 def val_epoch(state: RnnRetrainTrainState, epoch: int):
@@ -238,6 +243,23 @@ def val_epoch(state: RnnRetrainTrainState, epoch: int):
     return mean_loss
 
 
+val_losses = [100] * args.nonmo
+avg_params = jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), state.params)
+average_ckpts = False
+switch_epoch = 1
 for epoch in range(1, args.epochs + 1):
-    state = train_epoch(state, epoch)
-    val_epoch(state, epoch)
+    state, avg_epoch_params = train_epoch(state, epoch, average_ckpts=average_ckpts)
+    if average_ckpts:
+        avg_params = optax.incremental_update(avg_epoch_params, avg_params, 1 / (epoch - switch_epoch))
+        old_params = state.params
+        state.replace(params=avg_params)
+        val_loss = val_epoch(state, epoch)
+        state.replace(params=old_params)
+    else:
+        val_loss = val_epoch(state, epoch)
+    val_losses.append(val_loss)
+    val_losses = val_losses[-args.nonmo - 1:]
+    if not average_ckpts and val_losses[-1] > min(val_losses[:-1]):
+        logging.info('Switching to ASGD')
+        average_ckpts = True
+        switch_epoch = epoch
