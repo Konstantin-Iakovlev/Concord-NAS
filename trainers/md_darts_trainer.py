@@ -397,13 +397,13 @@ class MdDartsTrainer(DartsTrainer):
         Compute unrolled loss and backward its gradients
         """
         backup_params = copy.deepcopy(tuple(self.model.parameters()))
-
+        backup_optim = copy.deepcopy(self.model_optim)
         # do virtual step on training data
         lr = self.model_optim.param_groups[0]["lr"]
         momentum = self.model_optim.param_groups[0]["momentum"]
         weight_decay = self.model_optim.param_groups[0]["weight_decay"]
         self.another_batch={'X':tr_an_X, 'Y': tr_an_Y}
-        self._compute_virtual_model(trn_X, trn_y, lr, momentum, weight_decay)
+        self._compute_virtual_model(trn_X, trn_y, lr, momentum, weight_decay, backup_optim)
 
         # calculate unrolled loss on validation data
         # keep gradients for model here for compute hessian
@@ -434,7 +434,7 @@ class MdDartsTrainer(DartsTrainer):
         # restore weights
         self._restore_weights(backup_params)
 
-    def _compute_virtual_model(self, X, y, lr, momentum, weight_decay):
+    def _compute_virtual_model(self, X, y, lr, momentum, weight_decay, optim):
         """
         Compute unrolled weights w`
         """
@@ -446,7 +446,7 @@ class MdDartsTrainer(DartsTrainer):
             for w, g in zip(self.model.parameters(), gradients):
                 if g is None:
                     g = torch.zeros_like(w)
-                m = self.model_optim.state[w].get('momentum_buffer', 0.)
+                m = optim.state[w].get('momentum_buffer', 0.)
                 w = w - lr * (momentum * m + g + weight_decay * w)
 
     def _compute_hessian(self, backup_params, dw, trn_X, trn_y):
