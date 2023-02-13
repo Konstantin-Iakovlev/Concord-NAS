@@ -36,6 +36,8 @@ if __name__ == "__main__":
         # for d in datasets_train:
         #    print (next(iter(datasets_train))[0][0].mean())
         # continue
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
 
         model = CNN(int(config['darts']['input_size']),
                     int(config['darts']['input_channels']),
