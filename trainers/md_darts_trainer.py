@@ -284,7 +284,7 @@ class MdDartsTrainer(DartsTrainer):
 
             for domain_idx in range(len(self.datasets)):
                 self.ctrl_optim.zero_grad()
-                self.model_optim.zero_grad()
+               
                 trn_X, trn_y = train_objects[domain_idx]
                 val_X, val_y = valid_objects[domain_idx]
                 trn_X, trn_y = to_device(
@@ -315,6 +315,8 @@ class MdDartsTrainer(DartsTrainer):
 
                 # phase 2: child network step
                 # TODO: note that contrastive loss depends on w and alpha => we may need to remove in from valid loss
+                self.ctrl_optim.step()
+                self.model_optim.zero_grad()
                 self.another_batch = {'x': tr_an_X, 'y': tr_an_y}
 
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
@@ -328,8 +330,7 @@ class MdDartsTrainer(DartsTrainer):
                         self.model.parameters(), self.grad_clip)
                 # perform a step after calculating loss on each domain
                 self.model_optim.step()
-                self.ctrl_optim.step()
-
+                
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
                 trn_meters[domain_idx].update(metrics)
