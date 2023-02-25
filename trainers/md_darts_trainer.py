@@ -403,12 +403,12 @@ class MdDartsTrainer(DartsTrainer):
         lr = self.model_optim.param_groups[0]["lr"]
         momentum = self.model_optim.param_groups[0]["momentum"]
         weight_decay = self.model_optim.param_groups[0]["weight_decay"]
-        self.another_batch={'X':tr_an_X, 'Y': tr_an_Y}
+        self.another_batch={'x':tr_an_X, 'y': tr_an_Y}
         self._compute_virtual_model(trn_X, trn_y, lr, momentum, weight_decay, backup_optim)
 
         # calculate unrolled loss on validation data
         # keep gradients for model here for compute hessian
-        self.another_batch={'X': an_X, 'Y': an_Y}
+        self.another_batch={'x': an_X, 'y': an_Y}
         _, loss = self._logits_and_loss(val_X, val_y)
         w_model, w_ctrl = tuple(self.model.parameters()), \
             tuple([p for _, c in self.nas_modules for p in c.alpha.parameters()])
