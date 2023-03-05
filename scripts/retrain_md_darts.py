@@ -1,5 +1,6 @@
 import logging
 import os
+import sys 
 import json
 from argparse import ArgumentParser
 
@@ -21,10 +22,11 @@ import numpy as np
 
 class MdDartsRetrainer(DartsTrainer):
     def __init__(self, arch_path: str, folder_name, model: SparceMdDartsModel, loss, metrics, optimizer, lr_scheduler,
-                 num_epochs, datasets, seed=0, grad_clip=5., eta_lr=0.01,
+                 num_epochs, datasets, test_datasets, seed=0, grad_clip=5., eta_lr=0.01,
                  batch_size=64, workers=0,
                  device=None, log_frequency=None,
                  drop_path_proba_delta=0.0,
+
                  ):
         self.architectures = json.loads(open(arch_path).read())
         self.model = model
@@ -32,6 +34,7 @@ class MdDartsRetrainer(DartsTrainer):
         self.metrics = metrics
         self.num_epochs = num_epochs
         self.datasets = datasets
+        self.test_datasets = test_datasets
         self.eta_lr = eta_lr
         self.batch_size = batch_size
         self.workers = workers
@@ -42,8 +45,20 @@ class MdDartsRetrainer(DartsTrainer):
         self._seed = seed
         os.makedirs(os.path.join('retrain', folder_name), exist_ok=True)
         self._logger = logging.getLogger('darts')
-        self._logger.addHandler(logging.FileHandler(os.path.join('retrain', folder_name,
-                                                                 folder_name + '.log')))
+        handler = logging.FileHandler(os.path.join('retrain', folder_name,
+                                                   folder_name + '.log'))
+
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        self._logger.setLevel(logging.DEBUG)
+        self._logger.addHandler(handler)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)
+
+        
+
         self.writer = SummaryWriter(os.path.join('retrain', folder_name))
         self._step_num = 0
 
@@ -53,7 +68,7 @@ class MdDartsRetrainer(DartsTrainer):
         self.lr_scheduler = lr_scheduler
         self.grad_clip = grad_clip
         # TODO: Theoretical comparison: proposed optimization vs boosting functions
-        self.p = torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
+        self.p = 1.0#torch.tensor([1 / len(self.datasets)] * len(self.datasets)).to(self.device)
 
         self._init_dataloaders()
         self.drop_path_proba_delta = drop_path_proba_delta
@@ -61,27 +76,25 @@ class MdDartsRetrainer(DartsTrainer):
     def _init_dataloaders(self):
         self.train_loaders = []
         self.valid_loaders = []
-        for ds in self.datasets:
+        for ds, tds in zip(self.datasets, self.test_datasets):
             n_train = len(ds)
             # 50% on validation
             split = n_train // 2
             np.random.seed(0)
             indices = np.random.permutation(np.arange(n_train))
-            train_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[:split])
-            valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(indices[split:])
             self.train_loaders.append(torch.utils.data.DataLoader(ds,
                                                                   batch_size=self.batch_size,
-                                                                  sampler=train_sampler,
+                                                                  
                                                                   num_workers=self.workers))
-            self.valid_loaders.append(torch.utils.data.DataLoader(ds,
+            self.valid_loaders.append(torch.utils.data.DataLoader(tds,
                                                                   batch_size=self.batch_size,
-                                                                  sampler=valid_sampler,
                                                                   num_workers=self.workers))
 
     def _logits_and_loss(self, X, y):
         domain_idx = self.curr_domain
 
-        logits = self.model(X, domain_idx)
+        logits = self.model(X, domain_idx)['hidden_states'][-1]
+      
         loss = self.loss(logits, y)
         return logits, loss * self.p[domain_idx]
 
@@ -108,7 +121,7 @@ class MdDartsRetrainer(DartsTrainer):
 
                 # save current domain
                 self.curr_domain = domain_idx
-
+                print (type(trn_y))
                 logits, loss = self._logits_and_loss(trn_X, trn_y)
                 self.writer.add_scalar(f'Loss/train_{domain_idx}', loss.item() / self.p[domain_idx],
                                        self._step_num)
@@ -159,13 +172,16 @@ if __name__ == "__main__":
     parser = ArgumentParser("darts")
     parser.add_argument("--config", default='md_main_retrain.cfg')
     args = parser.parse_args()
-
+    
     config = ConfigObj(args.config)
+    seed=int(config['seed'])
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
     datasets_train, datasets_valid = datasets.get_datasets(config['datasets'].split(';'),
                                                            int(config['darts']['input_size']),
                                                            int(config['darts']['input_channels']),
-                                                           int(config['cutout_length']))
+                                                           int(config['cutout_length']), seed=seed)
 
     model = SparceMdDartsModel(config)
     criterion = nn.CrossEntropyLoss()
@@ -185,6 +201,7 @@ if __name__ == "__main__":
                                lr_scheduler=lr_scheduler,
                                num_epochs=int(config['epochs']),
                                datasets=datasets_train,
+                               test_datasets = datasets_valid,
                                eta_lr=config['darts']['optim']['eta_lr'],
                                seed=int(config['seed']),
                                batch_size=int(config['batch_size']),
