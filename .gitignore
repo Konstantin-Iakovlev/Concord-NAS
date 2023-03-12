@@ -9,6 +9,8 @@ __pycache__/
 data/*
 # searchs
 searchs/*
+search-EXP*
+eval-EXP*
 # retrain
 retrain/**/**
 *.json
