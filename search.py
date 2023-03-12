@@ -89,7 +89,8 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
     format=log_format, datefmt='%m/%d %I:%M:%S %p')
 fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
-logging.getLogger().addHandler(fh)
+logger = logging.getLogger('search')
+logger.addHandler(fh)
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -120,17 +121,17 @@ model = MdRnnModel(ntokens, args.emsize, args.nhid, args.nhidlast,
 size = 0
 for p in model.parameters():
     size += p.nelement()
-logging.info('param size: {}'.format(size))
-logging.info('initial genotype:')
-logging.info(model.export())
+logger.info('param size: {}'.format(size))
+logger.info('initial genotype:')
+logger.info(model.export())
 
 arch_optimizer = torch.optim.Adam(model.struct_parameters(), lr=args.arch_lr,
     weight_decay=args.arch_wdecay)
 # TODO: add architecture optimizer (w/o unroll) and weight optimizer
 
 total_params = sum(x.data.nelement() for x in model.parameters())
-logging.info('Args: {}'.format(args))
-logging.info('Model total parameters: {}'.format(total_params))
+logger.info('Args: {}'.format(args))
+logger.info('Model total parameters: {}'.format(total_params))
 
 
 @torch.no_grad()
@@ -235,10 +236,10 @@ def train():
 
         optimizer.param_groups[0]['lr'] = lr2
         if batch % args.log_interval == 0 and batch > 0:
-            logging.info(model.export())
+            logger.info(model.export())
             cur_loss = total_loss.item() / args.log_interval
             elapsed = time.time() - start_time
-            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+            logger.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
                 elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
@@ -264,16 +265,16 @@ for epoch in range(1, args.epochs+1):
     train()
 
     val_loss = evaluate(val_data, eval_batch_size)
-    logging.info('-' * 89)
-    logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+    logger.info('-' * 89)
+    logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
             'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                        val_loss, math.exp(val_loss)))
     writer.add_scalar('val/ppl', math.exp(val_loss))
-    logging.info('-' * 89)
+    logger.info('-' * 89)
 
     if val_loss < stored_loss:
         save_checkpoint(model, optimizer, epoch, args.save)
-        logging.info('Saving Normal!')
+        logger.info('Saving Normal!')
         stored_loss = val_loss
 
     best_val_loss.append(val_loss)

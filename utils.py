@@ -7,6 +7,15 @@ import torch.nn.functional as F
 import json
 
 
+def to_device(a, device):
+    for el in a:
+        if type(el) == torch.Tensor:
+            el = el.to(device)
+        else:
+            to_device(el)
+    return a
+
+
 def repackage_hidden(h):
     if isinstance(h, torch.Tensor):
         return h.detach()

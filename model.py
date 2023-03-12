@@ -66,7 +66,7 @@ class MdDartsRnnLayerChoice(nn.Module):
         none_idx = [i for i, name in enumerate(
             self.op_choices.keys()) if name == 'none'][0]
         W[:, none_idx] = -float('inf')
-        best_prev_node = W.max(-1).argmax()
+        best_prev_node = int(W.max(-1).argmax())
         best_op_idx = W[best_prev_node].argmax()
         return (list(self.op_choices.keys())[best_op_idx], best_prev_node)
 

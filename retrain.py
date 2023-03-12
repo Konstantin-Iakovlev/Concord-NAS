@@ -16,7 +16,8 @@ import model
 import json
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+from utils import (batchify, get_batch, repackage_hidden,
+                   create_exp_dir, save_checkpoint, to_device)
 
 parser = argparse.ArgumentParser(
     description='PyTorch PennTreeBank/WikiText2 Language Model')
@@ -87,7 +88,8 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format=log_format, datefmt='%m/%d %I:%M:%S %p')
 fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
 fh.setFormatter(logging.Formatter(log_format))
-logging.getLogger().addHandler(fh)
+logger = logging.getLogger('retrain')
+logger.addHandler(fh)
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -110,13 +112,13 @@ test_data = batchify(corpus.test, test_batch_size, args)
 ntokens = len(corpus.dictionary)
 genotype = json.load(open(args.arch_path))
 model = model.MdRnnModel(ntoken=ntokens, ninp=args.emsize, nhid=args.nhid,
-    nhidlast=args.nhid, dropout=args.dropout, dropouth=args.dropouth, dropoutx=args.dropoutx,
-    dropouti=args.dropouti, dropoute=args.dropoute, genotype=genotype, n_domains=1)  # TODO: n_domains to argparser
+                         nhidlast=args.nhid, dropout=args.dropout, dropouth=args.dropouth, dropoutx=args.dropoutx,
+                         dropouti=args.dropouti, dropoute=args.dropoute, genotype=genotype, n_domains=1).to(args.device)  # TODO: n_domains to argparser
 
 total_params = sum(x.data.nelement() for x in model.parameters())
-logging.info('Args: {}'.format(args))
-logging.info('Model total parameters: {}'.format(total_params))
-logging.info('Genotype: {}'.format(genotype))
+logger.info('Args: {}'.format(args))
+logger.info('Model total parameters: {}'.format(total_params))
+logger.info('Genotype: {}'.format(genotype))
 
 
 @torch.no_grad()
@@ -132,7 +134,7 @@ def evaluate(data_source, batch_size=10):
 
         log_prob, hidden = model(data, hidden)
         loss = nn.functional.nll_loss(
-            log_prob.view(-1, log_prob.size(2)), targets).data
+            log_prob.view(-1, log_prob.size(2)), targets.to(args.device)).data
 
         total_loss += loss * len(data)
 
@@ -174,9 +176,9 @@ def train():
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
             log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = model(
-                cur_data, hidden[s_id], return_h=True)
+                to_device(cur_data), hidden[s_id], return_h=True)
             raw_loss = nn.functional.nll_loss(
-                log_prob.view(-1, log_prob.size(2)), cur_targets)
+                log_prob.view(-1, log_prob.size(2)), cur_targets.to(args.device))
 
             loss = raw_loss
             # Activiation Regularization
@@ -210,7 +212,7 @@ def train():
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss.item() / args.log_interval
             elapsed = time.time() - start_time
-            logging.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+            logger.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                          'loss {:5.2f} | ppl {:8.2f}'.format(
                              epoch, batch, len(
                                  train_data) // args.bptt, optimizer.param_groups[0]['lr'],
@@ -242,7 +244,7 @@ try:
         try:
             train()
         except:
-            logging.info('rolling back to the previous best model ...')
+            logger.info('rolling back to the previous best model ...')
             model = torch.load(os.path.join(args.save, 'model.pt'))
             model = model.to(args.device)
 
@@ -266,16 +268,16 @@ try:
                 prm.data = optimizer.state[prm]['ax'].clone()
 
             val_loss2 = evaluate(val_data)
-            logging.info('-' * 89)
-            logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+            logger.info('-' * 89)
+            logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
                          'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                                     val_loss2, math.exp(val_loss2)))
             writer.add_scalar('val/ppl', math.exp(val_loss2), global_step)
-            logging.info('-' * 89)
+            logger.info('-' * 89)
 
             if val_loss2 < stored_loss:
                 save_checkpoint(model, optimizer, epoch, args.save)
-                logging.info('Saving Averaged!')
+                logger.info('Saving Averaged!')
                 stored_loss = val_loss2
 
             for prm in model.parameters():
@@ -283,20 +285,20 @@ try:
 
         else:
             val_loss = evaluate(val_data, eval_batch_size)
-            logging.info('-' * 89)
-            logging.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+            logger.info('-' * 89)
+            logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
                          'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                                     val_loss, math.exp(val_loss)))
             writer.add_scalar('val/ppl', math.exp(val_loss), global_step)
-            logging.info('-' * 89)
+            logger.info('-' * 89)
 
             if val_loss < stored_loss:
                 save_checkpoint(model, optimizer, epoch, args.save)
-                logging.info('Saving Normal!')
+                logger.info('Saving Normal!')
                 stored_loss = val_loss
 
             if 't0' not in optimizer.param_groups[0] and (len(best_val_loss) > args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
-                logging.info('Switching!')
+                logger.info('Switching!')
                 optimizer = torch.optim.ASGD(
                     model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
             best_val_loss.append(val_loss)
@@ -304,8 +306,8 @@ try:
         epoch += 1
 
 except KeyboardInterrupt:
-    logging.info('-' * 89)
-    logging.info('Exiting from training early')
+    logger.info('-' * 89)
+    logger.info('Exiting from training early')
 
 # Load the best saved model.
 model = torch.load(os.path.join(args.save, 'model.pt'))
@@ -313,7 +315,7 @@ model = model.to(args.device)
 
 # Run on test data.
 test_loss = evaluate(test_data, test_batch_size)
-logging.info('=' * 89)
-logging.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+logger.info('=' * 89)
+logger.info('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
     test_loss, math.exp(test_loss)))
-logging.info('=' * 89)
+logger.info('=' * 89)
