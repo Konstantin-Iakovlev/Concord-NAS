@@ -231,7 +231,8 @@ class MdDartsTrainer(DartsTrainer):
                     'hidden_states']
                 loss += self.contrastive_coeff * sum([self.contrastive_loss.forward(h1, h2, y, self.another_batch['y'])
                                                       for h1, h2 in zip(hidden_1_list, hidden_2_list)]) / len(hidden_1_list)
-
+        # loss
+       
         return logits, loss  # * self.p[domain_idx]
 
     def final_eval(self, fast=False, epoch=None):
@@ -430,7 +431,7 @@ class MdDartsTrainer(DartsTrainer):
                 if h is None:
                     continue
                     h = torch.zeros_like(param)
-                param.grad -= d - lr * h
+                param.grad = d - lr * h
 
         # restore weights
         self._restore_weights(backup_params)
