@@ -116,22 +116,6 @@ class Cell(nn.Module):
         return sum([node.concord_loss() for node in self.mutable_ops])
 
 
-class LinearNode(nn.Module):
-
-    def __init__(self, num_domains, size):
-        super().__init__()
-        _ops = [(f'linear_{i}', ops.ToyLinear(size)) for i in range(num_domains)] + [(f'id', ops.Identity())]
-
-        self.op  = LayerChoice(OrderedDict(_ops)) 
-
-        
-    def forward(self, prev_nodes, domain_idx):
-        return self.op(prev_nodes, domain_idx)
-
-    def concord_loss(self):
-        return  self.op.concord_loss()
-    
-
 class CNN(nn.Module):
     def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
                  n_nodes=4, stem_multiplier=3, drop_path_proba=0.0, auxiliary=False,
@@ -143,7 +127,7 @@ class CNN(nn.Module):
         self.n_layers = n_layers
         self.aux_pos = 2 * n_layers // 3 if auxiliary else -1
         if linear_stem:
-            self.linear_stem = LinearNode(n_heads, input_size)
+            self.linear_stem = ops.ToyLinear(n_heads, input_size)
         else:
             self.linear_stem = None 
 

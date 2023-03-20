@@ -5,23 +5,23 @@ import torch
 import torch.nn as nn
 
 class ToyLinear(nn.Module):
-    def __init__(self, size) -> None:
+    def __init__(self, size, domains) -> None:
         super().__init__()
         self.size = size
-        self.linear = torch.nn.Linear(size*size, size*size)
+        self.linear = torch.nn.ModuleList([torch.nn.Linear(size*size, size*size) for _ in domains])
 
     def forward(self, x, domain_idx):
-        return x
+        linear = self.linear[domain_idx]
         shape = x.shape
         if len(shape) == 3:
             result = x.view(x.shape[0], -1)
-            result = self.linear(result)
+            result = linear(result)
             result = result.view(x.shape[0], self.size, self.size)
         else:
             result = x.view(x.shape[0], x.shape[1], -1)
-            result = self.linear(x)
+            result = linear(x)
             result = result.view(x.shape[0], x.shape[1], self.size, self.size)
-        print (x.shape, result.shape, len(x.shape))
+        
         return result
 class DropPath(nn.Module):
     def __init__(self, p=0.):
