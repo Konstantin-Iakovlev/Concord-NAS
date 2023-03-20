@@ -116,16 +116,37 @@ class Cell(nn.Module):
         return sum([node.concord_loss() for node in self.mutable_ops])
 
 
+class LinearNode(nn.Module):
+
+    def __init__(self, num_domains, size):
+        super().__init__()
+        self.ops = nn.ModuleList()
+        ops = [(f'linear_{i}', ops.ToyLinear(size)) for i in range(num_domains)] + [(f'id', ops.Identity)]
+
+        self.ops = [LayerChoice(OrderedDict(ops))] 
+
+        
+    def forward(self, prev_nodes, domain_idx):
+        return self.ops[0](prev_nodes[0], domain_idx)
+
+    def concord_loss(self):
+        return  ops[0].concord_loss()
+    
+
 class CNN(nn.Module):
     def __init__(self, input_size, in_channels, channels, n_classes, n_layers, n_heads=1,
                  n_nodes=4, stem_multiplier=3, drop_path_proba=0.0, auxiliary=False,
-                 common_head=True):
+                 common_head=True, linear_stem = False):
         super().__init__()
         self.in_channels = in_channels
         self.channels = channels
         self.n_classes = n_classes
         self.n_layers = n_layers
         self.aux_pos = 2 * n_layers // 3 if auxiliary else -1
+        if linear_stem:
+            self.linear_stem = LinearNode(n_heads, input_size)
+        else:
+            self.linear_stem = None 
 
         c_cur = stem_multiplier * self.channels
         self.stem = nn.Sequential(
@@ -166,6 +187,9 @@ class CNN(nn.Module):
 
     def forward(self, x: torch.Tensor, domain_idx: int) -> Dict[str, torch.Tensor]:
         s0 = s1 = self.stem_bn[domain_idx](self.stem(x))
+        if self.linear_stem:
+            s0 = s1 = self.linear_stem(s0)
+            
         cell_out_dict = {'hidden_states': [], 'aux_logits': None}
 
         aux_logits = None

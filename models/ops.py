@@ -4,7 +4,17 @@
 import torch
 import torch.nn as nn
 
+class ToyLinear(nn.Module):
+    def __init__(self, size) -> None:
+        super().__init__()
+        self.size = size
+        self.linear = torch.nn.Linear(size*size, size*size)
 
+    def forward(self, x):
+        x = x.view(x.shape[0], x.shape[1], -1)
+        x = self.linear(x)
+        return x.view(x.shape[0], x.shape[1], self.size, self.size)
+    
 class DropPath(nn.Module):
     def __init__(self, p=0.):
         """
