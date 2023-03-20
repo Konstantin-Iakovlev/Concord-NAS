@@ -120,17 +120,16 @@ class LinearNode(nn.Module):
 
     def __init__(self, num_domains, size):
         super().__init__()
-        self.ops = nn.ModuleList()
-        ops = [(f'linear_{i}', ops.ToyLinear(size)) for i in range(num_domains)] + [(f'id', ops.Identity)]
+        _ops = [(f'linear_{i}', ops.ToyLinear(size)) for i in range(num_domains)] + [(f'id', ops.Identity())]
 
-        self.ops = [LayerChoice(OrderedDict(ops))] 
+        self.op  = LayerChoice(OrderedDict(_ops)) 
 
         
     def forward(self, prev_nodes, domain_idx):
-        return self.ops[0](prev_nodes[0], domain_idx)
+        return self.op(prev_nodes, domain_idx)
 
     def concord_loss(self):
-        return  ops[0].concord_loss()
+        return  self.op.concord_loss()
     
 
 class CNN(nn.Module):
@@ -188,8 +187,8 @@ class CNN(nn.Module):
     def forward(self, x: torch.Tensor, domain_idx: int) -> Dict[str, torch.Tensor]:
         s0 = s1 = self.stem_bn[domain_idx](self.stem(x))
         if self.linear_stem:
-            s0 = s1 = self.linear_stem(s0)
-            
+            s0 = s1 = self.linear_stem(s0, domain_idx)
+
         cell_out_dict = {'hidden_states': [], 'aux_logits': None}
 
         aux_logits = None
