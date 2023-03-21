@@ -8,11 +8,13 @@ import json
 
 
 def to_device(a, device):
+    if type(a) == torch.Tensor:
+        return a.to(device)
     for el in a:
         if type(el) == torch.Tensor:
             el = el.to(device)
         else:
-            to_device(el)
+            to_device(el, device)
     return a
 
 

@@ -84,12 +84,18 @@ args.save = 'eval-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
 
 log_format = '%(asctime)s %(message)s'
-logging.basicConfig(stream=sys.stdout, level=logging.INFO,
-                    format=log_format, datefmt='%m/%d %I:%M:%S %p')
-fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
-fh.setFormatter(logging.Formatter(log_format))
+formatter = logging.Formatter(log_format)
 logger = logging.getLogger('retrain')
+logger.setLevel(logging.INFO)
+fh = logging.FileHandler(os.path.join(args.save, 'log.txt'))
+fh.setFormatter(formatter)
+fh.setLevel(logging.INFO)
+sh = logging.StreamHandler()
+sh.setFormatter(formatter)
+sh.setLevel(logging.INFO)
+
 logger.addHandler(fh)
+logger.addHandler(sh)
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -132,7 +138,7 @@ def evaluate(data_source, batch_size=10):
         data, targets = get_batch(data_source, i, args, evaluation=True)
         targets = targets.view(-1)
 
-        log_prob, hidden = model(data, hidden)
+        log_prob, hidden = model(to_device(data, args.device), to_device(hidden, args.device))
         loss = nn.functional.nll_loss(
             log_prob.view(-1, log_prob.size(2)), targets.to(args.device)).data
 
@@ -176,7 +182,7 @@ def train():
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
             log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = model(
-                to_device(cur_data), hidden[s_id], return_h=True)
+                to_device(cur_data, args.device), to_device(hidden[s_id], args.device), return_h=True)
             raw_loss = nn.functional.nll_loss(
                 log_prob.view(-1, log_prob.size(2)), cur_targets.to(args.device))
 
@@ -245,7 +251,7 @@ try:
             train()
         except:
             logger.info('rolling back to the previous best model ...')
-            model = torch.load(os.path.join(args.save, 'model.pt'))
+            model.load_state_dict(torch.load(os.path.join(args.save, 'model.pt')))
             model = model.to(args.device)
 
             optimizer_state = torch.load(
@@ -310,7 +316,7 @@ except KeyboardInterrupt:
     logger.info('Exiting from training early')
 
 # Load the best saved model.
-model = torch.load(os.path.join(args.save, 'model.pt'))
+model.load_state_dict(torch.load(os.path.join(args.save, 'model.pt')))
 model = model.to(args.device)
 
 # Run on test data.
