@@ -282,8 +282,9 @@ class MdDartsTrainer(DartsTrainer):
         if epoch % 10 == 0:
             self.final_eval(fast=True, epoch=epoch)
         for step, (train_objects, valid_objects) in enumerate(zip(zip(*self.train_loaders), zip(*self.valid_loaders))):
-
+            #import time
             for domain_idx in range(len(self.datasets)):
+                #time_s = time.time()
                 self.ctrl_optim.zero_grad()
                
                 trn_X, trn_y = train_objects[domain_idx]
@@ -306,14 +307,15 @@ class MdDartsTrainer(DartsTrainer):
                 an_X = to_device(an_X, self.device)
                 an_y = to_device(an_y, self.device)
                 
-
+                #print ('prepare', time.time() - time_s)
                 # phase 1. architecture step
                 if self.unrolled:
                     self._unrolled_backward(trn_X, trn_y, val_X, val_y, tr_an_X, tr_an_y, an_X, an_y)
                 else:
                     self.another_batch = {'x': an_X, 'y': an_y}
                     self._backward(val_X, val_y)
-
+                
+                #print ('arch', time.time() - time_s)
                 # phase 2: child network step
                 # TODO: note that contrastive loss depends on w and alpha => we may need to remove in from valid loss
                 self.ctrl_optim.step()
@@ -332,13 +334,14 @@ class MdDartsTrainer(DartsTrainer):
                 # perform a step after calculating loss on each domain
                 self.model_optim.step()
                 
+                #print ('params', time.time() - time_s)
                 metrics = self.metrics(logits, trn_y)
                 metrics['loss'] = loss.item() / self.p[domain_idx]
                 trn_meters[domain_idx].update(metrics)
                 if step == 0:
                     self.writer.add_scalar(
                         f'Acc/train_{domain_idx}', metrics['acc1'], self._step_num)
-
+                
             if self.log_frequency is not None and step % self.log_frequency == 0:
                 # validate
                 self.model.eval()
@@ -369,7 +372,6 @@ class MdDartsTrainer(DartsTrainer):
                     self.writer.add_scalar(
                         f'P_{i}', self.p[i].item(), self._step_num)
             self._step_num += 1
-
         self.lr_scheduler.step()
         # update temperature
         self.t += self.delta_t
@@ -380,11 +382,13 @@ class MdDartsTrainer(DartsTrainer):
         self.model.set_drop_path_proba(
             self.model.get_drop_path_proba() + self.drop_path_proba_delta)
         try:
-            save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
+            if epoch % 10 == 0:
+                save_checkpoint(self._ckpt_dir, epoch, self.model.state_dict(),
                             self.model_optim.state_dict(), self.ctrl_optim.state_dict())
         except Exception as e:
             print('could not save checkpoint', repr(e))
-
+        
+        
     @torch.no_grad()
     def export(self, domain_idx: int):
         domain_idx = to_device(domain_idx, self.device)

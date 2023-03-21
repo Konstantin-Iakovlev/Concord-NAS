@@ -127,7 +127,7 @@ class CNN(nn.Module):
         self.n_layers = n_layers
         self.aux_pos = 2 * n_layers // 3 if auxiliary else -1
         if linear_stem:
-            self.linear_stem = ops.ToyLinear(n_heads, input_size)
+            self.linear_stem = ops.ToyLinear(input_size, n_heads)
         else:
             self.linear_stem = None 
 
