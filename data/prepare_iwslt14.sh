@@ -26,7 +26,7 @@ fi
 src=de
 tgt=en
 lang=de-en
-prep=iwslt14.tokenized.de-en
+prep=iwslt14
 tmp=$prep/tmp
 orig=orig
 
@@ -111,6 +111,12 @@ for L in $src $tgt; do
     for f in train.$L valid.$L test.$L; do
         echo "apply_bpe.py to ${f}..."
         python $BPEROOT/apply_bpe.py -c $BPE_CODE < $tmp/$f > $prep/$f
+        sed -i -e "s/^/[$L] /" $prep/$f
+        sed -i -e "s/$/ <eos>/" $prep/$f
     done
 done
+
+rm -rf subword-nmt
+rm -rf mosesdecoder
+rm -rf orig
 
