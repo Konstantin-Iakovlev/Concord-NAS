@@ -1,7 +1,11 @@
 import os
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 from collections import Counter
+from typing import List, Tuple
+
+PAD_TOKEN = '<pad>'
 
 
 class Dictionary(object):
@@ -88,6 +92,39 @@ class SentCorpus(object):
 
         return sents
 
+
+class ParallelSentenceCorpus:
+    def __init__(self, path: str) -> None:
+        self.dictionary = Dictionary()
+        self.train_parallel = self.tokenize(os.path.join(path, 'train.txt'))
+        self.valid_parallel = self.tokenize(os.path.join(path, 'valid.txt'))
+        self.test_parallel = self.tokenize(os.path.join(path, 'test.txt'))
+    
+    def tokenize(self, path: str) -> Tuple[List[torch.LongTensor], List[torch.LongTensor]]:
+        """Tokenizes a parallel file with \t separator"""
+        assert os.path.exists(path)
+        self.dictionary.add_word(PAD_TOKEN)
+        # update dictionary
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # we do not add <eos>, because we already have it in the file
+                words = line.strip().split()
+                for word in words:
+                    self.dictionary.add_word(word)
+        # tokenize the content
+        en_sents = []
+        de_sents = []
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                en_text, de_text = line.strip().split('\t')
+                en_sents.append(torch.LongTensor(self.tokenize_sent(en_text.split())))
+                de_sents.append(torch.LongTensor(self.tokenize_sent(de_text.split())))
+        return en_sents, de_sents     
+    
+    def tokenize_sent(self, words: List[str]) -> List[int]:
+        return [self.dictionary.word2idx[w] for w in words]
+
+
 class BatchSentLoader(object):
     def __init__(self, sents, batch_size, pad_id=0, cuda=False, volatile=False):
         self.sents = sents
@@ -121,3 +158,28 @@ class BatchSentLoader(object):
         self.idx = 0
         return self
 
+
+class BatchParallelLoader:
+    def __init__(self, sents: Tuple[List[torch.LongTensor], List[torch.LongTensor]],
+                 batch_size, pad_id=0, device='cpu', max_len=500) -> None:
+        self.sents = sorted(zip(*sents), key=lambda s: s[0].shape[0] + s[1].shape[0],
+                            reverse=True)
+        self.batch_size = batch_size
+        self.pad_id = pad_id
+        self.device = device
+        self.max_len = max_len
+
+    def __iter__(self):
+        self.idx = 0
+        return self
+
+    def __next__(self):
+        if self.idx >= len(self.sents):
+            raise StopIteration
+        batch_size = min(self.batch_size, len(self.sents) - self.idx)
+        batch_par = self.sents[self.idx: self.idx + batch_size]
+        en_padded = pad_sequence([b[0][:self.max_len] for b in batch_par], batch_first=True, padding_value=self.pad_id)
+        de_padded = pad_sequence([b[1][:self.max_len] for b in batch_par], batch_first=True, padding_value=self.pad_id)
+        self.idx += batch_size
+        return en_padded.to(self.device), de_padded.to(self.device)
+        
