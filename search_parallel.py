@@ -64,7 +64,7 @@ parser.add_argument('--alpha', type=float, default=0,
 parser.add_argument('--beta', type=float, default=1e-3,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--beta_contr', type=float, default=1.0,
-                    help='contrastive regularizer')
+                    help='contrastive regularizer coefficient')
 parser.add_argument('--wdecay', type=float, default=5e-7,
                     help='weight decay applied to all weights')
 parser.add_argument('--small_batch_size', type=int, default=-1,
@@ -177,6 +177,8 @@ def train():
     hidden_valid = model.init_hidden(args.batch_size)
     valid_iterator = iter(search_loader)
     for i, (en_train, de_train) in enumerate(train_loader):
+        if en_train.shape[0] < args.batch_size:
+            continue
         hidden = repackage_hidden(hidden)
         hidden_valid = repackage_hidden(hidden_valid)
 
@@ -184,6 +186,8 @@ def train():
         arch_optimizer.zero_grad()
         try:
             en_val, de_val = next(valid_iterator)
+            if en_val.shape[0] < args.batch_size:
+                raise
         except:
             valid_iterator = iter(valid_iterator)
             en_val, de_val = next(valid_iterator)
@@ -239,7 +243,7 @@ def train():
 
         if i % args.log_interval == 0 and i > 0:
             logger.info(model.export())
-            cur_loss = raw_loss.item() / args.log_interval
+            cur_loss = raw_loss.item()
             elapsed = time.time() - start_time
             logger.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                         'loss {:5.2f} | ppl {:8.2f}'.format(
@@ -250,7 +254,6 @@ def train():
             writer.add_scalar('train/ppl', math.exp(cur_loss), global_step)
             writer.add_scalar('train/contr', contr_loss.item(), global_step)
             global_step += 1
-            total_loss = 0
             start_time = time.time()
 
 
