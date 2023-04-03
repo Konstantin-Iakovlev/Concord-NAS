@@ -182,4 +182,7 @@ class BatchParallelLoader:
         de_padded = pad_sequence([b[1][:self.max_len] for b in batch_par], batch_first=True, padding_value=self.pad_id)
         self.idx += batch_size
         return en_padded.to(self.device), de_padded.to(self.device)
+    
+    def __len__(self):
+        return len(self.sents)
         

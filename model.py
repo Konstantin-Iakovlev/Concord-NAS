@@ -15,6 +15,47 @@ from ops import Operation
 INITRANGE = 0.04
 
 
+def get_eos_embeds(hiddens: torch.Tensor, inputs: torch.Tensor, pad_idx=0) -> torch.Tensor:
+    """Extracts hidden states of <eos>
+
+    :param hiddens: tensor of shape (bs, seq_len, nhid)
+    :param inputs: tensor of shape (bs, seq_len)
+    :param pad_idx: padding index, defaults to 0
+    :return: tensor of shape (bs, nhid)
+    """
+    lengths = (inputs != pad_idx).sum(-1)
+    eos_mask = torch.zeros_like(inputs).scatter(1, lengths[..., None] - 1, 1).bool()
+    return hiddens.reshape(-1, hiddens.shape[-1])[eos_mask.reshape(-1)]
+
+
+def nll_lm_loss(log_probs: torch.Tensor, inputs: torch.LongTensor, pad_idx=0):
+    """Computes NLL loss
+
+    :param log_probs: tensor of shape (batch_size, seq_len, n_tokens)
+    :param inputs: tensor of shape (batch_size, seq_len)
+    :param pad_idx: padding index, defaults to 0
+    """
+    logits = log_probs[:, :-1, :]
+    targets = inputs[:, 1:]
+    pad_mask = (targets != pad_idx).reshape(-1)
+    return F.nll_loss(logits.reshape(-1, logits.shape[-1])[pad_mask], targets.reshape(-1)[pad_mask])
+
+
+def triplet_loss(en_hiddens: torch.Tensor, de_hiddens: torch.Tensor) -> torch.Tensor:
+    """Computes triplet contrastive loss
+
+    :param en_hiddens: tensor os shape (bs, nhid) -- outputs from <eos>
+    :param de_hiddens: tensor of shape (bs, nhid) -- outputs from <eos>
+    :return: contrastive loss
+    """
+    sim_matrix = en_hiddens @ de_hiddens.t()
+    # find hard negatives
+    mask = torch.eye(sim_matrix.shape[0]).bool().to(sim_matrix.device)
+    sim_matrix[mask] = -float('inf')
+    hard_neg_ids = sim_matrix.argmax(-1)
+    return F.triplet_margin_loss(en_hiddens, de_hiddens, de_hiddens[hard_neg_ids])
+
+
 class MdDartsRnnLayerChoice(nn.Module):
     def __init__(self, layer_choice: LayerChoice,
                  n_domains: int = 1,
