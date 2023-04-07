@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--arch_path', type=str, required=True,
                     default='final_architecture.json',
                     help='architecture path')
-parser.add_argument('--data', type=str, default='data/penn/',
+parser.add_argument('--data', type=str, default='data/iwslt14/en_de_parallel',
                     help='location of the data corpus')
 parser.add_argument('--device', type=str, default='cuda',
                     help='device: cpu, cuda')
@@ -42,8 +42,8 @@ parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=500,
                     help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=64, metavar='N',
-                    help='batch size')
+parser.add_argument('--n_tokens', type=int, default=2_000, metavar='N',
+                    help='number of tokens per update')
 parser.add_argument('--bptt', type=int, default=35,
                     help='sequence length')
 parser.add_argument('--dropout', type=float, default=0.75,
@@ -72,18 +72,12 @@ parser.add_argument('--beta_contr', type=float, default=1.0,
                     help='contrastive regularizer coefficient')
 parser.add_argument('--wdecay', type=float, default=8e-7,
                     help='weight decay applied to all weights')
-parser.add_argument('--small_batch_size', type=int, default=-1,
-                    help='the batch size for computation. batch_size should be divisible by small_batch_size.\
-                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
-                     until batch_size is reached. An update step is then performed.')
 parser.add_argument('--max_seq_len_delta', type=int, default=20,
                     help='max sequence length')
 args = parser.parse_args()
 
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
-if args.small_batch_size < 0:
-    args.small_batch_size = args.batch_size
 
 args.save = 'eval-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
@@ -113,14 +107,14 @@ if torch.cuda.is_available():
 
 par_corpus = ParallelSentenceCorpus(args.data)
 
-eval_batch_size = 10
-test_batch_size = 1
+eval_n_tokens = 2000
+test_n_tokens = 2000
 train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.batch_size, device=args.device)
+    par_corpus.train_parallel, args.n_tokens, device=args.device)
 valid_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, eval_batch_size, device=args.device)
+    par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, test_batch_size, device=args.device)
+    par_corpus.valid_parallel, test_n_tokens, device=args.device)
 
 
 ntokens = len(par_corpus.dictionary)
@@ -156,7 +150,6 @@ def evaluate(data_source: BatchParallelLoader):
 
 
 def train():
-    assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
     total_loss = 0
     start_time = time.time()
     model.train()
