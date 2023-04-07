@@ -37,10 +37,8 @@ parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=50,
                     help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=256, metavar='N',
-                    help='batch size')
-parser.add_argument('--bptt', type=int, default=35,
-                    help='sequence length')
+parser.add_argument('--n_tokens', type=int, default=256, metavar='N',
+                    help='number of tokens per update')
 parser.add_argument('--dropout', type=float, default=0.75,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--dropouth', type=float, default=0.25,
@@ -52,8 +50,6 @@ parser.add_argument('--dropouti', type=float, default=0.2,
 parser.add_argument('--dropoute', type=float, default=0,
                     help='dropout to remove words from embedding layer (0 = no dropout)')
 parser.add_argument('--seed', type=int, default=3,
-                    help='random seed')
-parser.add_argument('--nonmono', type=int, default=5,
                     help='random seed')
 parser.add_argument('--log-interval', type=int, default=50, metavar='N',
                     help='report interval')
@@ -67,12 +63,6 @@ parser.add_argument('--beta_contr', type=float, default=1.0,
                     help='contrastive regularizer coefficient')
 parser.add_argument('--wdecay', type=float, default=5e-7,
                     help='weight decay applied to all weights')
-parser.add_argument('--small_batch_size', type=int, default=-1,
-                    help='the batch size for computation. batch_size should be divisible by small_batch_size.\
-                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
-                     until batch_size is reached. An update step is then performed.')
-parser.add_argument('--max_seq_len_delta', type=int, default=20,
-                    help='max sequence length')
 parser.add_argument('--unrolled', action='store_true',
                     default=False, help='use one-step unrolled validation loss')
 parser.add_argument('--arch_wdecay', type=float, default=1e-3,
@@ -83,8 +73,6 @@ args = parser.parse_args()
 
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
-if args.small_batch_size < 0:
-    args.small_batch_size = args.batch_size
 
 args.save = 'search-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
 create_exp_dir(args.save, scripts_to_save=glob.glob('*.py'))
@@ -112,18 +100,18 @@ if torch.cuda.is_available():
     cudnn.enabled = True
     torch.cuda.manual_seed_all(args.seed)
 
-eval_batch_size = 10
-test_batch_size = 1
+eval_n_tokens = 2000
+test_n_tokens = 2000
 
 par_corpus = ParallelSentenceCorpus(args.data)
 train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.batch_size, device=args.device)
+    par_corpus.train_parallel, args.n_tokens, device=args.device)
 search_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, args.batch_size, device=args.device)
+    par_corpus.valid_parallel, args.n_tokens, device=args.device)
 valid_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, eval_batch_size, device=args.device)
+    par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, test_batch_size, device=args.device)
+    par_corpus.valid_parallel, test_n_tokens, device=args.device)
 
 ntokens = len(par_corpus.dictionary)
 model = MdRnnModel(ntokens, args.emsize, args.nhid, args.nhidlast,
@@ -168,30 +156,23 @@ def evaluate(data_source: BatchParallelLoader):
 
 
 def train():
-    assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
     model.train()
     # Turn on training mode which enables dropout.
     total_loss = 0
     start_time = time.time()
-    hidden = model.init_hidden(args.batch_size)
-    hidden_valid = model.init_hidden(args.batch_size)
     valid_iterator = iter(search_loader)
     for i, (en_train, de_train) in enumerate(train_loader):
-        if en_train.shape[0] < args.batch_size:
-            continue
-        hidden = repackage_hidden(hidden)
-        hidden_valid = repackage_hidden(hidden_valid)
+        hidden = model.init_hidden(en_train.shape[0])
 
         # architecture step; TODO: unroll
         arch_optimizer.zero_grad()
         try:
             en_val, de_val = next(valid_iterator)
-            if en_val.shape[0] < args.batch_size:
-                raise
         except:
             valid_iterator = iter(valid_iterator)
             en_val, de_val = next(valid_iterator)
 
+        hidden_valid = model.init_hidden(en_val.shape[0])
         log_en, _, raw_outputs_en, _ = model(
             en_val.t(), hidden_valid, 0, return_h=True)
         arch_loss = nll_lm_loss(log_en.transpose(0, 1), en_val)
@@ -248,7 +229,7 @@ def train():
             logger.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                         'loss {:5.2f} | ppl {:8.2f}'.format(
                             epoch, i, len(
-                                train_loader) // args.bptt, optimizer.param_groups[0]['lr'],
+                                train_loader), optimizer.param_groups[0]['lr'],
                             elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             global global_step
             writer.add_scalar('train/ppl', math.exp(cur_loss), global_step)

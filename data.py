@@ -160,11 +160,29 @@ class BatchSentLoader(object):
 
 
 class BatchParallelLoader:
-    def __init__(self, sents: Tuple[List[torch.LongTensor], List[torch.LongTensor]],
-                 batch_size, pad_id=0, device='cpu', max_len=500) -> None:
-        self.sents = sorted(zip(*sents), key=lambda s: s[0].shape[0] + s[1].shape[0],
+    def __init__(self, sents_: Tuple[List[torch.LongTensor], List[torch.LongTensor]],
+                 n_tokens, pad_id=0, device='cpu', max_len=500) -> None:
+        sents = sorted(zip(*sents_), key=lambda s: s[0].shape[0] + s[1].shape[0],
                             reverse=True)
-        self.batch_size = batch_size
+        repacked_sents = [[]]
+        cur_tokens = 0
+        for sent_en, sent_de in sents:
+            delta_tokens = sent_en.shape[0] + sent_de.shape[0]
+            cur_tokens += delta_tokens
+            if cur_tokens <= n_tokens:
+                repacked_sents[-1].append((torch.LongTensor(sent_en), torch.LongTensor(sent_de)))
+            else:
+                cur_tokens = delta_tokens
+                repacked_sents.append([(torch.LongTensor(sent_en), torch.LongTensor(sent_de))])
+        del sents
+        padded_sents = []
+        for batch in repacked_sents:
+            en_list, de_list = zip(*batch)
+            en_padded = pad_sequence(en_list, batch_first=True, padding_value=pad_id)
+            de_padded = pad_sequence(de_list, batch_first=True, padding_value=pad_id)
+            padded_sents.append((en_padded, de_padded))
+        del repacked_sents
+        self.sents = padded_sents
         self.pad_id = pad_id
         self.device = device
         self.max_len = max_len
@@ -176,12 +194,9 @@ class BatchParallelLoader:
     def __next__(self):
         if self.idx >= len(self.sents):
             raise StopIteration
-        batch_size = min(self.batch_size, len(self.sents) - self.idx)
-        batch_par = self.sents[self.idx: self.idx + batch_size]
-        en_padded = pad_sequence([b[0][:self.max_len] for b in batch_par], batch_first=True, padding_value=self.pad_id)
-        de_padded = pad_sequence([b[1][:self.max_len] for b in batch_par], batch_first=True, padding_value=self.pad_id)
-        self.idx += batch_size
-        return en_padded.to(self.device), de_padded.to(self.device)
+        en_batch, de_batch = self.sents[self.idx]
+        self.idx += 1
+        return en_batch.to(self.device), de_batch.to(self.device)
     
     def __len__(self):
         return len(self.sents)
