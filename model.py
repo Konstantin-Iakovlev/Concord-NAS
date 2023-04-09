@@ -78,14 +78,15 @@ class MdDartsRnnLayerChoice(nn.Module):
     def forward(self, c: torch.Tensor, h: torch.Tensor, states: torch.Tensor, domain_idx: int = 1) -> torch.Tensor:
         """Performs forward pass
 
-        :param c: tensor of shape (node_idx, batch_size, nhid)
-        :param h: tensor of shape (node_idx, batch_size, nhid)
+        :param c: tensor of shape (node_idx, batch_size, prim, nhid)
+        :param h: tensor of shape (node_idx, batch_size, prim, nhid)
         :param states: tensor of shape (node_idx, batch_size, nhid)
         :param domain_idx: domain index, defaults to 1
         :return: weightted output
         """
-        unweighted = torch.stack([states + c * (op(h) - states) for op in self.op_choices.values()],
-                                 dim=0)  # (num_ops, num_prev, *)
+        unweighted = torch.stack([states + c[:, :, i] * (op(h[:, :, i]) - states)
+                                for i, op in enumerate(self.op_choices.values())],
+                               dim=0) # (num_ops, num_prev, *)
         # TODO: add Gumbel-Softmax support
         if self.sampling_mode == 'softmax':
             weights = self.alpha[domain_idx].softmax(-1).t()
@@ -177,9 +178,15 @@ class MdRnnCell(nn.Module):
 
         self._W0 = nn.Parameter(torch.Tensor(
             ninp + nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE))
-        self._Ws = nn.ParameterList([
-            nn.Parameter(torch.Tensor(nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE)) for _ in range(STEPS)
-        ])
+        if self.genotype is None:
+            self._Ws = nn.ParameterList([
+                nn.Parameter(torch.Tensor(nhid, 2 * len(PRIMITIVES) * nhid).uniform_(-INITRANGE, INITRANGE)) \
+                    for _ in range(STEPS)
+            ])
+        else:
+            self._Ws = nn.ParameterList([
+                nn.Parameter(torch.Tensor(nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE)) for _ in range(STEPS)
+            ])
         self.ops = nn.ModuleList()
         for node_idx in range(1, STEPS + 1):
             self.ops.append(LayerChoice(
@@ -206,7 +213,7 @@ class MdRnnCell(nn.Module):
         :param h_prev: tensor of shape (bs, nhid)
         :param x_mask: tensor of shape (bs, ninp)
         :param h_mask: tensor of shape (bs, nhid)
-        :return: tensor of shape (bs, nhid')
+        :return: tensor of shape (bs, nhid)
         """
         if self.training:
             xh_prev = torch.cat([x * x_mask, h_prev * h_mask], dim=-1)
@@ -240,8 +247,11 @@ class MdRnnCell(nn.Module):
                 masked_states = states * h_mask[None]
             else:
                 masked_states = states
-            ch = masked_states.view(-1, self.nhid).mm(
-                self._Ws[i]).view(i + 1, -1, 2 * self.nhid)
+            ch = masked_states.view(-1, self.nhid).mm(self._Ws[i])
+            if self.genotype is None:
+                ch = ch.view(i + 1, -1, len(PRIMITIVES), 2 * self.nhid)
+            else:
+                ch = ch.view(i + 1, -1, 2 * self.nhid)
             c, h = torch.split(ch, self.nhid, dim=-1)
             c = c.sigmoid()
 
@@ -385,4 +395,3 @@ class MdRnnModel(nn.Module):
 
     def export(self):
         return self.rnn.export()
-
