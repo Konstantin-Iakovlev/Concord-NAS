@@ -24,7 +24,8 @@ def get_eos_embeds(hiddens: torch.Tensor, inputs: torch.Tensor, pad_idx=0) -> to
     :return: tensor of shape (bs, nhid)
     """
     lengths = (inputs != pad_idx).sum(-1)
-    eos_mask = torch.zeros_like(inputs).scatter(1, lengths[..., None] - 1, 1).bool()
+    eos_mask = torch.zeros_like(inputs).scatter(
+        1, lengths[..., None] - 1, 1).bool()
     return hiddens.reshape(-1, hiddens.shape[-1])[eos_mask.reshape(-1)]
 
 
@@ -85,8 +86,8 @@ class MdDartsRnnLayerChoice(nn.Module):
         :return: weightted output
         """
         unweighted = torch.stack([states + c[:, :, i] * (op(h[:, :, i]) - states)
-                                for i, op in enumerate(self.op_choices.values())],
-                               dim=0) # (num_ops, num_prev, *)
+                                  for i, op in enumerate(self.op_choices.values())],
+                                 dim=0)  # (num_ops, num_prev, *)
         # TODO: add Gumbel-Softmax support
         if self.sampling_mode == 'softmax':
             weights = self.alpha[domain_idx].softmax(-1).t()
@@ -133,20 +134,25 @@ class MdOneHotRnnLayerChoice(nn.Module):
         self.op_choices = nn.ModuleDict(OrderedDict(
             [(name, layer_choice[name]) for name in layer_choice.names]))
         self.node_idx = int(self.label[5:])  # in [1, 8]
+        self.name2idx = {}
+        for i, key in enumerate(self.op_choices.keys()):
+            self.name2idx[key] = i
         self.genotype = genotype
 
     def forward(self, c: torch.Tensor, h: torch.Tensor, states: torch.Tensor, domain_idx: int = 0) -> torch.Tensor:
         """Performs forward pass
 
-        :param c: tensor of shape (node_idx, batch_size, nhid)
-        :param h: tensor of shape (node_idx, batch_size, nhid)
+        :param c: tensor of shape (node_idx, batch_size, prim, nhid)
+        :param h: tensor of shape (node_idx, batch_size, prim, nhid)
         :param states: tensor of shape (node_idx, batch_size, nhid)
         :param domain_idx: domain index, defaults to 1
         :return: current state
         """
         name, prev_node_idx = self.genotype[domain_idx][self.node_idx - 1]
         act_fn = self.op_choices[name]
-        out = states[prev_node_idx] + c[prev_node_idx] * (act_fn(h[prev_node_idx]) - states[prev_node_idx])
+        op_idx = self.name2idx[name]
+        out = states[prev_node_idx] + c[prev_node_idx, :, op_idx] * \
+            (act_fn(h[prev_node_idx, :, op_idx]) - states[prev_node_idx])
         return out
 
     def export(self):
@@ -178,15 +184,11 @@ class MdRnnCell(nn.Module):
 
         self._W0 = nn.Parameter(torch.Tensor(
             ninp + nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE))
-        if self.genotype is None:
-            self._Ws = nn.ParameterList([
-                nn.Parameter(torch.Tensor(nhid, 2 * len(PRIMITIVES) * nhid).uniform_(-INITRANGE, INITRANGE)) \
-                    for _ in range(STEPS)
-            ])
-        else:
-            self._Ws = nn.ParameterList([
-                nn.Parameter(torch.Tensor(nhid, 2 * nhid).uniform_(-INITRANGE, INITRANGE)) for _ in range(STEPS)
-            ])
+        self._Ws = nn.ParameterList([
+            nn.Parameter(torch.Tensor(nhid, 2 * len(PRIMITIVES)
+                            * nhid).uniform_(-INITRANGE, INITRANGE))
+            for _ in range(STEPS)
+        ])
         self.ops = nn.ModuleList()
         for node_idx in range(1, STEPS + 1):
             self.ops.append(LayerChoice(
@@ -248,10 +250,7 @@ class MdRnnCell(nn.Module):
             else:
                 masked_states = states
             ch = masked_states.view(-1, self.nhid).mm(self._Ws[i])
-            if self.genotype is None:
-                ch = ch.view(i + 1, -1, len(PRIMITIVES), 2 * self.nhid)
-            else:
-                ch = ch.view(i + 1, -1, 2 * self.nhid)
+            ch = ch.view(i + 1, -1, len(PRIMITIVES), 2 * self.nhid)
             c, h = torch.split(ch, self.nhid, dim=-1)
             c = c.sigmoid()
 
