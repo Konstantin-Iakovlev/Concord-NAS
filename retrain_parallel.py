@@ -110,7 +110,7 @@ par_corpus = ParallelSentenceCorpus(args.data)
 eval_n_tokens = 2000
 test_n_tokens = 2000
 train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.n_tokens, device=args.device)
+    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=70)
 valid_loader = BatchParallelLoader(
     par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
@@ -155,6 +155,8 @@ def train():
     model.train()
     # TODO: think of the last small batch
     for i, (en_train, de_train) in enumerate(train_loader):
+        if i == len(train_loader) - 1:
+            continue
         hidden = model.init_hidden(en_train.shape[0])
         hidden = repackage_hidden(hidden)
 

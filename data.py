@@ -167,10 +167,10 @@ class BatchParallelLoader:
         repacked_sents = [[]]
         cur_tokens = 0
         for sent_en, sent_de in sents:
-            delta_tokens = sent_en.shape[0] + sent_de.shape[0]
+            delta_tokens = min(sent_en.shape[0], max_len) + min(sent_de.shape[0], max_len)
             cur_tokens += delta_tokens
             if cur_tokens <= n_tokens:
-                repacked_sents[-1].append((torch.LongTensor(sent_en), torch.LongTensor(sent_de)))
+                repacked_sents[-1].append((torch.LongTensor(sent_en)[:max_len], torch.LongTensor(sent_de)[:max_len]))
             else:
                 cur_tokens = delta_tokens
                 repacked_sents.append([(torch.LongTensor(sent_en), torch.LongTensor(sent_de))])
