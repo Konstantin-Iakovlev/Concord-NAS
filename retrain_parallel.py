@@ -133,20 +133,22 @@ logger.info('Genotype: {}'.format(genotype))
 def evaluate(data_source: BatchParallelLoader):
     model.eval()
     total_loss_en = total_loss_de = 0
-    n_total = 0
+    n_total_en = n_total_de = 0
     for _, (en_batch, de_batch) in enumerate(data_source):
         hidden = model.init_hidden(en_batch.shape[0])
         log_en, _ = model(en_batch.t(), hidden, 0)
+        n_en_tokens = (en_batch != data_source.pad_id).sum().item()
         total_loss_en += nll_lm_loss(log_en.transpose(0, 1),
-                                     en_batch) * en_batch.shape[0]
+                                     en_batch) * n_en_tokens
 
         log_de, _ = model(de_batch.t(), hidden, 1)
+        n_de_tokens = (de_batch != data_source.pad_id).sum().item()
         total_loss_de += nll_lm_loss(log_de.transpose(0, 1),
-                                     de_batch) * en_batch.shape[0]
+                                     de_batch) * n_de_tokens
+        n_total_en += n_en_tokens
+        n_total_de += n_de_tokens
 
-        n_total += en_batch.shape[0]
-
-    return {'en_loss': total_loss_en.item() / n_total, 'de_loss': total_loss_de.item() / n_total}
+    return {'en_loss': total_loss_en.item() / n_total_en, 'de_loss': total_loss_de.item() / n_total_de}
 
 
 def train():
