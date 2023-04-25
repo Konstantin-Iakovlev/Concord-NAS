@@ -28,6 +28,12 @@ parser.add_argument('--arch_path', type=str, required=True,
                     help='architecture path')
 parser.add_argument('--data', type=str, default='data/iwslt14/en_de_parallel',
                     help='location of the data corpus')
+parser.add_argument('--lang', type=str, default='en-de',
+                    help='language pair/single language')
+parser.add_argument('--max_len', type=int, default=500,
+                    help='maximal sentence length for each language')
+parser.add_argument('--min_len', type=int, default=0,
+                    help='minimal sentence length for each language')
 parser.add_argument('--device', type=str, default='cuda',
                     help='device: cpu, cuda')
 parser.add_argument('--emsize', type=int, default=850,
@@ -42,10 +48,8 @@ parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=500,
                     help='upper epoch limit')
-parser.add_argument('--n_tokens', type=int, default=2_000, metavar='N',
-                    help='number of tokens per update')
-parser.add_argument('--bptt', type=int, default=35,
-                    help='sequence length')
+parser.add_argument('--n_tokens', type=int, default=4480, metavar='N',
+                    help='number of tokens per update (proportional to the number of domains)')
 parser.add_argument('--dropout', type=float, default=0.75,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--dropouth', type=float, default=0.25,
@@ -64,16 +68,12 @@ parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                     help='report interval')
 parser.add_argument('--save', type=str,  default='EXP',
                     help='path to save the final model')
-parser.add_argument('--alpha', type=float, default=0,
-                    help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
 parser.add_argument('--beta', type=float, default=1e-3,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--beta_contr', type=float, default=1.0,
                     help='contrastive regularizer coefficient')
 parser.add_argument('--wdecay', type=float, default=8e-7,
                     help='weight decay applied to all weights')
-parser.add_argument('--max_seq_len_delta', type=int, default=20,
-                    help='max sequence length')
 args = parser.parse_args()
 
 if args.nhidlast < 0:
@@ -110,7 +110,7 @@ par_corpus = ParallelSentenceCorpus(args.data)
 eval_n_tokens = 2000
 test_n_tokens = 2000
 train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=70)
+    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
 valid_loader = BatchParallelLoader(
     par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
@@ -148,7 +148,8 @@ def evaluate(data_source: BatchParallelLoader):
         n_total_en += n_en_tokens
         n_total_de += n_de_tokens
 
-    return {'en_loss': total_loss_en.item() / n_total_en, 'de_loss': total_loss_de.item() / n_total_de}
+    return {'en_loss': min(total_loss_en.item() / n_total_en, 10),
+            'de_loss': min(total_loss_de.item() / n_total_de, 10)}
 
 
 def train():
@@ -162,33 +163,32 @@ def train():
         hidden = model.init_hidden(en_train.shape[0])
         hidden = repackage_hidden(hidden)
 
-        log_en, _, hs_en, dropped_hs_en = model(
-            en_train.t(), hidden, 0, return_h=True)
-        log_de, _, hs_de, dropped_hs_de = model(
-            de_train.t(), hidden, 1, return_h=True)
-
-        raw_loss = nll_lm_loss(log_en.transpose(0, 1), en_train)
-        raw_loss += nll_lm_loss(log_de.transpose(0, 1), de_train)
-        raw_loss /= 2
-
-        # contrastive regularization
-        contr_loss = triplet_loss(get_eos_embeds(hs_en[0].transpose(0, 1), en_train),
-                                  get_eos_embeds(hs_de[0].transpose(0, 1), de_train)) * args.beta_contr
-
-        # activation regularization
-        reg_loss = torch.tensor(0.0).to(en_train.device)
-        if args.alpha > 0:
-            reg_loss += sum(args.alpha * dropped_rnn_h.pow(2).mean()
-                            for dropped_rnn_h in dropped_hs_en[-1:])
-            reg_loss += sum(args.alpha * dropped_rnn_h.pow(2).mean()
-                            for dropped_rnn_h in dropped_hs_de[-1:])
+        raw_loss = torch.tensor(0.0).to(args.device)
+        if 'en' in args.lang:
+            log_en, _, hs_en, dropped_hs_en = model(
+                en_train.t(), hidden, 0, return_h=True)
+            raw_loss += nll_lm_loss(log_en.transpose(0, 1), en_train)
+        if 'de' in args.lang:
+            log_de, _, hs_de, dropped_hs_de = model(
+                de_train.t(), hidden, 1, return_h=True)
+            raw_loss += nll_lm_loss(log_de.transpose(0, 1), de_train)
+        contr_loss = torch.tensor(0.0).to(args.device)
+        if 'en' in args.lang and 'de' in args.lang:
+            raw_loss /= 2
+            # contrastive regularization
+            contr_loss += triplet_loss(get_eos_embeds(hs_en[0].transpose(0, 1), en_train),
+                                    get_eos_embeds(hs_de[0].transpose(0, 1), de_train)) * args.beta_contr
 
         # Temporal Activation Regularization (slowness)
-        reg_loss += sum(args.beta *
-                        (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in hs_en[-1:])
-        reg_loss += sum(args.beta *
-                        (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in hs_de[-1:])
-        reg_loss /= 2
+        reg_loss = torch.tensor(0.0).to(args.device)
+        if 'en' in args.lang:
+            reg_loss += sum(args.beta *
+                            (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in hs_en[-1:])
+        if 'de' in args.lang:
+            reg_loss += sum(args.beta *
+                            (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in hs_de[-1:])
+        if 'en' in args.lang and 'de' in args.lang:
+            reg_loss /= 2
 
         optimizer.zero_grad()
         total_loss = raw_loss + reg_loss + contr_loss
@@ -207,7 +207,7 @@ def train():
             logger.info('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                         'loss {:5.2f} | ppl {:8.2f}'.format(
                             epoch, i, len(
-                                train_loader) // args.bptt, optimizer.param_groups[0]['lr'],
+                                train_loader), optimizer.param_groups[0]['lr'],
                             elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             global global_step
             writer.add_scalar('train/ppl', math.exp(cur_loss), global_step)
@@ -269,10 +269,10 @@ try:
                 writer.add_scalar('val/ppl', math.exp(val_loss2), global_step)
             logger.info('-' * 89)
 
-            if val_loss2 < stored_loss:
+            if min(val_loss2_dict.values()) < stored_loss:
                 save_checkpoint(model, optimizer, epoch, args.save)
                 logger.info('Saving Averaged!')
-                stored_loss = val_loss2
+                stored_loss = min(val_loss2_dict.values())
 
             for prm in model.parameters():
                 prm.data = tmp[prm].clone()
@@ -288,10 +288,10 @@ try:
                 writer.add_scalar('val/ppl', math.exp(val_loss), global_step)
             logger.info('-' * 89)
 
-            if val_loss < stored_loss:
+            if min(val_loss_dict.values()) < stored_loss:
                 save_checkpoint(model, optimizer, epoch, args.save)
                 logger.info('Saving Normal!')
-                stored_loss = val_loss
+                stored_loss = min(val_loss_dict.values())
 
             if 't0' not in optimizer.param_groups[0] and (len(best_val_loss) > args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
                 logger.info('Switching!')
