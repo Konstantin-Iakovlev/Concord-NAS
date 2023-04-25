@@ -161,12 +161,14 @@ class BatchSentLoader(object):
 
 class BatchParallelLoader:
     def __init__(self, sents_: Tuple[List[torch.LongTensor], List[torch.LongTensor]],
-                 n_tokens, pad_id=0, device='cpu', max_len=500) -> None:
+                 n_tokens, pad_id=0, device='cpu', max_len=500, min_len=0) -> None:
         sents = sorted(zip(*sents_), key=lambda s: s[0].shape[0] + s[1].shape[0],
                             reverse=True)
         repacked_sents = [[]]
         cur_tokens = 0
         for sent_en, sent_de in sents:
+            if sent_en.shape[0] < min_len or sent_de.shape[0] < min_len:
+                continue
             delta_tokens = min(sent_en.shape[0], max_len) + min(sent_de.shape[0], max_len)
             cur_tokens += delta_tokens
             if cur_tokens <= n_tokens:
