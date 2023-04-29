@@ -147,8 +147,8 @@ def evaluate(data_source: BatchParallelLoader, lang: str = 'en-de'):
                                      de_batch) * n_de_tokens
         n_total_en += n_en_tokens
         n_total_de += n_de_tokens
-    ret_dict = {'en_loss': min(total_loss_en.item() / n_total_en, 10),
-                'de_loss': min(total_loss_de.item() / n_total_de, 10)}
+    ret_dict = {'en': min(total_loss_en.item() / n_total_en, 10),
+                'de': min(total_loss_de.item() / n_total_de, 10)}
     return {key: ret_dict[key] for key in ret_dict if key in lang}
 
 
@@ -216,7 +216,6 @@ def train():
             total_loss = 0
             start_time = time.time()
 
-
 # Loop over epochs.
 lr = args.lr
 best_val_loss = []
@@ -225,25 +224,85 @@ writer = SummaryWriter(log_dir=args.save)
 global_step = 0
 
 # At any point you can hit Ctrl + C to break out of training early.
-optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-epoch = 1
-while epoch < args.epochs + 1:
-    epoch_start_time = time.time()
-    train()
-    val_loss_dict = evaluate(valid_loader, args.lang)
-    logger.info('-' * 89)
-    for key, val_loss in val_loss_dict.items():
-        logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {} {:5.2f} | '
-                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                key,
-                                                val_loss, math.exp(val_loss)))
-        writer.add_scalar('val/ppl', math.exp(val_loss), global_step)
-    logger.info('-' * 89)
+try:
+    optimizer = torch.optim.SGD(
+        model.parameters(), lr=args.lr, weight_decay=args.wdecay)
 
-    if min(val_loss_dict.values()) < stored_loss:
-        save_checkpoint(model, optimizer, epoch, args.save)
-        stored_loss = min(val_loss_dict.values())
-    epoch += 1
+    epoch = 1
+    while epoch < args.epochs + 1:
+        epoch_start_time = time.time()
+        try:
+            train()
+        except:
+            logger.info('rolling back to the previous best model ...')
+            model.load_state_dict(torch.load(
+                os.path.join(args.save, 'model.pt')))
+            model = model.to(args.device)
+
+            optimizer_state = torch.load(
+                os.path.join(args.save, 'optimizer.pt'))
+            if 't0' in optimizer_state['param_groups'][0]:
+                optimizer = torch.optim.ASGD(
+                    model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
+            else:
+                optimizer = torch.optim.SGD(
+                    model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+            optimizer.load_state_dict(optimizer_state)
+
+            epoch = torch.load(os.path.join(args.save, 'misc.pt'))['epoch']
+            continue
+
+        if 't0' in optimizer.param_groups[0]:
+            tmp = {}
+            for prm in model.parameters():
+                tmp[prm] = prm.data.clone()
+                prm.data = optimizer.state[prm]['ax'].clone()
+
+            val_loss2_dict = evaluate(valid_loader)
+            logger.info('-' * 89)
+            for key, val_loss2 in val_loss2_dict.items():
+                logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {} {:5.2f} | '
+                            'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                                       key,
+                                                       val_loss2, math.exp(val_loss2)))
+                writer.add_scalar('val/ppl', math.exp(val_loss2), global_step)
+            logger.info('-' * 89)
+
+            if min(val_loss2_dict.values()) < stored_loss:
+                save_checkpoint(model, optimizer, epoch, args.save)
+                logger.info('Saving Averaged!')
+                stored_loss = min(val_loss2_dict.values())
+
+            for prm in model.parameters():
+                prm.data = tmp[prm].clone()
+
+        else:
+            val_loss_dict = evaluate(valid_loader)
+            logger.info('-' * 89)
+            for key, val_loss in val_loss_dict.items():
+                logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {} {:5.2f} | '
+                            'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                                       key,
+                                                       val_loss, math.exp(val_loss)))
+                writer.add_scalar('val/ppl', math.exp(val_loss), global_step)
+            logger.info('-' * 89)
+
+            if min(val_loss_dict.values()) < stored_loss:
+                save_checkpoint(model, optimizer, epoch, args.save)
+                logger.info('Saving Normal!')
+                stored_loss = min(val_loss_dict.values())
+
+            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss) > args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
+                logger.info('Switching!')
+                optimizer = torch.optim.ASGD(
+                    model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
+            best_val_loss.append(val_loss)
+
+        epoch += 1
+
+except KeyboardInterrupt:
+    logger.info('-' * 89)
+    logger.info('Exiting from training early')
 
 # Load the best saved model.
 model.load_state_dict(torch.load(os.path.join(args.save, 'model.pt')))
