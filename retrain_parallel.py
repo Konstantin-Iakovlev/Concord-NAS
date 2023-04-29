@@ -258,7 +258,7 @@ try:
                 tmp[prm] = prm.data.clone()
                 prm.data = optimizer.state[prm]['ax'].clone()
 
-            val_loss2_dict = evaluate(valid_loader)
+            val_loss2_dict = evaluate(valid_loader, args.lang)
             logger.info('-' * 89)
             for key, val_loss2 in val_loss2_dict.items():
                 logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {} {:5.2f} | '
@@ -277,7 +277,7 @@ try:
                 prm.data = tmp[prm].clone()
 
         else:
-            val_loss_dict = evaluate(valid_loader)
+            val_loss_dict = evaluate(valid_loader, args.lang)
             logger.info('-' * 89)
             for key, val_loss in val_loss_dict.items():
                 logger.info('| end of epoch {:3d} | time: {:5.2f}s | valid loss {} {:5.2f} | '
@@ -292,11 +292,12 @@ try:
                 logger.info('Saving Normal!')
                 stored_loss = min(val_loss_dict.values())
 
-            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss) > args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
+            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss) > args.nonmono and \
+                                                          min(val_loss_dict.values()) > min(best_val_loss[:-args.nonmono])):
                 logger.info('Switching!')
                 optimizer = torch.optim.ASGD(
                     model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-            best_val_loss.append(val_loss)
+            best_val_loss.append(min(val_loss_dict.values()))
 
         epoch += 1
 
