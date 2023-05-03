@@ -30,6 +30,8 @@ parser.add_argument('--data', type=str, default='data/iwslt14/en_de_parallel',
                     help='location of the data corpus')
 parser.add_argument('--lang', type=str, default='en-de',
                     help='language pair/single language')
+parser.add_argument('--union', type=bool, default=False,
+                    help='use union of domains instead of multimodeling')
 parser.add_argument('--max_len', type=int, default=500,
                     help='maximal sentence length for each language')
 parser.add_argument('--min_len', type=int, default=0,
@@ -170,7 +172,7 @@ def train():
             raw_loss += nll_lm_loss(log_en.transpose(0, 1), en_train)
         if 'de' in args.lang:
             log_de, _, hs_de, dropped_hs_de = model(
-                de_train.t(), hidden, 1, return_h=True)
+                de_train.t(), hidden, 1 if not args.union else 0, return_h=True)
             raw_loss += nll_lm_loss(log_de.transpose(0, 1), de_train)
         contr_loss = torch.tensor(0.0).to(args.device)
         if 'en' in args.lang and 'de' in args.lang:
