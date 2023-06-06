@@ -42,6 +42,30 @@ def nll_lm_loss(log_probs: torch.Tensor, inputs: torch.LongTensor, pad_idx=0):
     return F.nll_loss(logits.reshape(-1, logits.shape[-1])[pad_mask], targets.reshape(-1)[pad_mask])
 
 
+def _entropy(logits: torch.Tensor) -> torch.Tensor:
+    """Calculates entropy of the categorical distribution
+
+    :param logits: logits of the distribution of shape (bs, categories)
+    :return: entropies of shape (bs,)
+    """
+    d = torch.distributions.Categorical(logits=logits)
+    return d.entropy()
+
+
+def struct_reg_loss(struct_1: List[torch.Tensor], struct_2: List[torch.Tensor]) -> torch.Tensor:
+    """Computes structural loss
+
+    :param struct_1: structural parameters of domain 1
+    :param struct_2: structural parameters of domain 2
+    :return: mean JS-divergence between edges
+    """
+    alpha_1 = torch.cat(struct_1, dim=0)
+    alpha_2 = torch.cat(struct_2, dim=0)
+    m = torch.log(0.5 * torch.softmax(alpha_1, dim=-1) +
+                  0.5 * torch.softmax(alpha_2, dim=-1))
+    return (_entropy(m) - 0.5 * _entropy(alpha_1) - 0.5 * _entropy(alpha_2)).mean()
+
+
 def triplet_loss(en_hiddens: torch.Tensor, de_hiddens: torch.Tensor) -> torch.Tensor:
     """Computes triplet contrastive loss
 

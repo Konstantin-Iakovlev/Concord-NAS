@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 import gc
 
 from data import BatchParallelLoader, ParallelSentenceCorpus
-from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds
+from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds, struct_reg_loss
 
 from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
 
@@ -61,6 +61,8 @@ parser.add_argument('--beta', type=float, default=1e-3,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--beta_contr', type=float, default=1.0,
                     help='contrastive regularizer coefficient')
+parser.add_argument('--beta_struct', type=float, default=1.0,
+                    help='structural regularizer coefficient')
 parser.add_argument('--wdecay', type=float, default=5e-7,
                     help='weight decay applied to all weights')
 parser.add_argument('--unrolled', action='store_true',
@@ -214,9 +216,13 @@ def train():
 
         # contrastive regularization
         contr_loss = triplet_loss(get_eos_embeds(hs_en[0].transpose(0, 1), en_train),
-                                  get_eos_embeds(hs_de[0].transpose(0, 1), de_train)) * args.beta_contr
+                                  get_eos_embeds(hs_de[0].transpose(0, 1), de_train))
 
-        total_loss = raw_loss + reg_loss + contr_loss
+        # structural regularization
+        struct_loss = struct_reg_loss([t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '0'],
+                                      [t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '1'])
+
+        total_loss = raw_loss + reg_loss + contr_loss * args.beta_contr + struct_loss * args.beta_struct
         total_loss.backward()
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -236,6 +242,7 @@ def train():
             global global_step
             writer.add_scalar('train/ppl', math.exp(cur_loss), global_step)
             writer.add_scalar('train/contr', contr_loss.item(), global_step)
+            writer.add_scalar('train/struct', struct_loss.item(), global_step)
             global_step += 1
             start_time = time.time()
 
