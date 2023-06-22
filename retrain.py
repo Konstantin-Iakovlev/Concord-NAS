@@ -196,13 +196,13 @@ def train_step(state: RnnRetrainTrainState, batch):
 
 @jax.jit
 def val_step(state: RnnRetrainTrainState, batch):
-    out, _ = eval_model.apply({'params': state.params, 'batch_stats': state.batch_stats},
+    out, hidden_next, _ = eval_model.apply({'params': state.params, 'batch_stats': state.batch_stats},
                                     batch['src_val'], batch['hidden_val'], batch['trg_val'], mutable=[
                                         'batch_stats'],
                                     rngs={'dropout': state.dropout, 'mask_2d': state.mask_2d, 'params': state.params_key,
                                         'locked_dropout_emb': state.locked_dropout_emb, 'locked_dropout_out': state.locked_dropout_out},
                                         method=eval_model._loss)
-    return out[0]
+    return out[0], hidden_next
 
 
 def train_epoch(state: RnnRetrainTrainState, epoch: int, average_ckpts: bool = False):
@@ -233,7 +233,7 @@ def val_epoch(state: RnnRetrainTrainState, epoch: int):
     for i in tqdm(range(0, val_data.shape[0] - 1, args.bptt), leave=False):
         src_valid, trg_valid = get_batch(val_data, i, args)
         batch = {'src_val': src_valid, 'hidden_val': hidden_valid, 'trg_val': trg_valid}
-        loss_val = val_step(state, batch)
+        loss_val, hidden_valid = val_step(state, batch)
         total_loss += loss_val.item() * src_valid.shape[0]
     
     mean_loss = min(total_loss / val_data.shape[0], 50)
