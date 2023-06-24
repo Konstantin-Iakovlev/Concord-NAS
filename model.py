@@ -99,6 +99,7 @@ class MdDartsRnnLayerChoice(nn.Module):
         num_prev_nodes = int(self.label[5:])
         self.alpha = nn.ParameterList([torch.randn(num_prev_nodes, len(self.op_choices)) * 1e-3
                                        for _ in range(n_domains)])
+        self.beta = nn.ParameterList([torch.randn(num_prev_nodes) * 1e-3 for _ in range(n_domains)])
 
     def forward(self, c: torch.Tensor, h: torch.Tensor, states: torch.Tensor, domain_idx: int = 1) -> torch.Tensor:
         """Performs forward pass
@@ -114,7 +115,9 @@ class MdDartsRnnLayerChoice(nn.Module):
                                  dim=0)  # (num_ops, num_prev, *)
         # TODO: add Gumbel-Softmax support
         if self.sampling_mode == 'softmax':
-            weights = self.alpha[domain_idx].softmax(-1).t()
+            weights = self.alpha[domain_idx].softmax(-1).t()  # (ops, num_prev)
+            # edge normalization
+            weights = weights *  self.beta[domain_idx].softmax(-1)[None]
             weights = weights.view(
                 list(weights.shape) + [1] * (len(unweighted.shape) - 2))
         else:
@@ -129,7 +132,7 @@ class MdDartsRnnLayerChoice(nn.Module):
         :param domain_idx: domain index
         :return: tuple of name, previous node index
         """
-        W = self.alpha[domain_idx].detach().softmax(-1).cpu().numpy()
+        W = (self.alpha[domain_idx].softmax(-1) * self.beta[domain_idx][..., None]).detach().cpu().numpy()
         none_idx = [i for i, name in enumerate(
             self.op_choices.keys()) if name == 'none'][0]
         W[:, none_idx] = -float('inf')

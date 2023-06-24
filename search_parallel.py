@@ -23,6 +23,10 @@ parser = argparse.ArgumentParser(
     description='PyTorch PennTreeBank/WikiText2 Language Model')
 parser.add_argument('--data', type=str, default='data/iwslt14/en_de_parallel',
                     help='location of the data corpus')
+parser.add_argument('--max_len', type=int, default=500,
+                    help='maximal sentence length for each language')
+parser.add_argument('--min_len', type=int, default=0,
+                    help='minimal sentence length for each language')
 parser.add_argument('--device', type=str, default='cuda',
                     help='device: cpu, cuda')
 parser.add_argument('--emsize', type=int, default=300,
@@ -107,7 +111,7 @@ test_n_tokens = 2000
 
 par_corpus = ParallelSentenceCorpus(args.data)
 train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.n_tokens, device=args.device)
+    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
 search_loader = BatchParallelLoader(
     par_corpus.valid_parallel, args.n_tokens, device=args.device)
 valid_loader = BatchParallelLoader(
@@ -184,8 +188,12 @@ def train():
             de_val.t(), hidden_valid, 1, return_h=True)
         arch_loss += nll_lm_loss(log_de.transpose(0, 1), de_val)
         contr_loss = triplet_loss(get_eos_embeds(raw_outputs_en[0].transpose(0, 1), en_val),
-                                  get_eos_embeds(raw_outputs_de[0].transpose(0, 1), de_val)) * args.beta_contr
-        (arch_loss / 2 + contr_loss).backward()
+                                  get_eos_embeds(raw_outputs_de[0].transpose(0, 1), de_val))
+        # TODO: add structural regularizer
+        # structural regularization
+        struct_loss = struct_reg_loss([t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '0'],
+                                      [t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '1'])
+        (arch_loss / 2 + contr_loss * args.beta_contr + struct_loss * args.beta_struct).backward()
         arch_optimizer.step()
 
         optimizer.zero_grad()
@@ -218,11 +226,8 @@ def train():
         contr_loss = triplet_loss(get_eos_embeds(hs_en[0].transpose(0, 1), en_train),
                                   get_eos_embeds(hs_de[0].transpose(0, 1), de_train))
 
-        # structural regularization
-        struct_loss = struct_reg_loss([t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '0'],
-                                      [t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '1'])
 
-        total_loss = raw_loss + reg_loss + contr_loss * args.beta_contr + struct_loss * args.beta_struct
+        total_loss = raw_loss + reg_loss + contr_loss * args.beta_contr
         total_loss.backward()
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
