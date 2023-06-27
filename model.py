@@ -70,8 +70,7 @@ def struct_intersect_loss(alpha_1: List[torch.Tensor], beta_1: List[torch.Tensor
                           alpha_2: List[torch.Tensor], beta_2: List[torch.Tensor]) -> torch.Tensor:
     res = torch.tensor(.0).to(alpha_1[0].device)
     for a1, b1, a2, b2 in zip(alpha_1, beta_1, alpha_2, beta_2):
-        res += ((b1.softmax(-1) * b2.softmax(-1))[..., None] * \
-              (2 - (a1.softmax(-1) * a2.softmax(-1)).sum())).sum()
+        res += (b1.softmax(-1) * b2.softmax(-1) * (a1.softmax(-1) * a2.softmax(-1)).sum(-1)).sum()
     return res
 
 
