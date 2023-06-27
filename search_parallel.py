@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 import gc
 
 from data import BatchParallelLoader, ParallelSentenceCorpus
-from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds, struct_reg_loss
+from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds, struct_reg_loss, struct_intersect_loss
 
 from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
 
@@ -189,10 +189,12 @@ def train():
         arch_loss += nll_lm_loss(log_de.transpose(0, 1), de_val)
         contr_loss = triplet_loss(get_eos_embeds(raw_outputs_en[0].transpose(0, 1), en_val),
                                   get_eos_embeds(raw_outputs_de[0].transpose(0, 1), de_val))
-        # TODO: add structural regularizer
         # structural regularization
-        struct_loss = struct_reg_loss([t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '0'],
-                                      [t for key, t in model.struct_named_parameters() if key.split('.')[-1] == '1'])
+        alphas = [[t for key, t in model.struct_named_parameters() if key.split(
+            '.')[-1] == d and 'alpha' in key] for d in ['0', '1']]
+        betas = [[t for key, t in model.struct_named_parameters() if key.split(
+            '.')[-1] == d and 'beta' in key] for d in ['0', '1']]
+        struct_loss = struct_intersect_loss(alphas[0], betas[0], alphas[1], betas[1])
         (arch_loss / 2 + contr_loss * args.beta_contr + struct_loss * args.beta_struct).backward()
         arch_optimizer.step()
 
@@ -225,7 +227,6 @@ def train():
         # contrastive regularization
         contr_loss = triplet_loss(get_eos_embeds(hs_en[0].transpose(0, 1), en_train),
                                   get_eos_embeds(hs_de[0].transpose(0, 1), de_train))
-
 
         total_loss = raw_loss + reg_loss + contr_loss * args.beta_contr
         total_loss.backward()

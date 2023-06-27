@@ -53,7 +53,7 @@ def _entropy(logits: torch.Tensor) -> torch.Tensor:
 
 
 def struct_reg_loss(struct_1: List[torch.Tensor], struct_2: List[torch.Tensor]) -> torch.Tensor:
-    """Computes structural loss
+    """Computes structural loss: JS divergence between alphas
 
     :param struct_1: structural parameters of domain 1
     :param struct_2: structural parameters of domain 2
@@ -64,6 +64,15 @@ def struct_reg_loss(struct_1: List[torch.Tensor], struct_2: List[torch.Tensor]) 
     m = torch.log(0.5 * torch.softmax(alpha_1, dim=-1) +
                   0.5 * torch.softmax(alpha_2, dim=-1))
     return (_entropy(m) - 0.5 * _entropy(alpha_1) - 0.5 * _entropy(alpha_2)).mean()
+
+
+def struct_intersect_loss(alpha_1: List[torch.Tensor], beta_1: List[torch.Tensor],
+                          alpha_2: List[torch.Tensor], beta_2: List[torch.Tensor]) -> torch.Tensor:
+    res = torch.tensor(.0).to(alpha_1[0].device)
+    for a1, b1, a2, b2 in zip(alpha_1, beta_1, alpha_2, beta_2):
+        res += ((b1.softmax(-1) * b2.softmax(-1))[..., None] * \
+              (2 - (a1.softmax(-1) * a2.softmax(-1)).sum())).sum()
+    return res
 
 
 def triplet_loss(en_hiddens: torch.Tensor, de_hiddens: torch.Tensor) -> torch.Tensor:
@@ -416,7 +425,7 @@ class MdRnnModel(nn.Module):
 
     def struct_named_parameters(self):
         for name, p in super(MdRnnModel, self).named_parameters():
-            if 'alpha' in name:
+            if 'alpha' in name or 'beta' in name:
                 yield name, p
 
     def struct_parameters(self):
