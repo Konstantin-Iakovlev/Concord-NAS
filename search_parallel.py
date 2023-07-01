@@ -113,7 +113,7 @@ par_corpus = ParallelSentenceCorpus(args.data)
 train_loader = BatchParallelLoader(
     par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
 search_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, args.n_tokens, device=args.device)
+    par_corpus.valid_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
 valid_loader = BatchParallelLoader(
     par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
