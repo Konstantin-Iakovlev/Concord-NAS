@@ -276,8 +276,12 @@ for epoch in range(1, args.epochs+1):
         writer.add_scalar('val/ppl', math.exp(val_loss))
     logger.info('-' * 89)
 
-    # val_loss == de_loss
-    if val_loss < stored_loss:
+    alphas = [[t for key, t in model.struct_named_parameters() if key.split(
+        '.')[-1] == d and 'alpha' in key] for d in ['0', '1']]
+    betas = [[t for key, t in model.struct_named_parameters() if key.split(
+        '.')[-1] == d and 'beta' in key] for d in ['0', '1']]
+    struct_loss = struct_intersect_loss(alphas[0], betas[0], alphas[1], betas[1])
+    if val_loss + struct_loss * args.beta_struct < stored_loss:
         save_checkpoint(model, optimizer, epoch, args.save)
         logger.info('Saving Normal!')
         stored_loss = val_loss
