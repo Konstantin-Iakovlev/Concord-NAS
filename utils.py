@@ -7,6 +7,23 @@ import torch.nn.functional as F
 import json
 
 
+class ConstantSchedulerWithWarmup:
+    def __init__(self, warmup_steps: int, value: float) -> None:
+        if not warmup_steps >= 0:
+            raise ValueError(f'Expected {warmup_steps} >= 0')
+        self.warmup_steps = warmup_steps
+        self.value = value
+        self._step = 0
+    
+    def get_value(self) -> float:
+        if self._step >= self.warmup_steps or self.warmup_steps == 0:
+            return self.value
+        return self._step / self.warmup_steps * self.value
+    
+    def step(self):
+        self._step += 1
+
+
 def to_device(a, device):
     if type(a) == torch.Tensor:
         return a.to(device)

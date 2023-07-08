@@ -17,7 +17,7 @@ import gc
 from data import BatchParallelLoader, ParallelSentenceCorpus
 from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds, struct_reg_loss, struct_intersect_loss
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+from utils import create_exp_dir, save_checkpoint, ConstantSchedulerWithWarmup
 
 parser = argparse.ArgumentParser(
     description='PyTorch PennTreeBank/WikiText2 Language Model')
@@ -67,6 +67,8 @@ parser.add_argument('--beta_contr', type=float, default=1.0,
                     help='contrastive regularizer coefficient')
 parser.add_argument('--beta_struct', type=float, default=1.0,
                     help='structural regularizer coefficient')
+parser.add_argument('--warmup_steps_struct', type=int, default=1000,
+                    help='structural regularization coefficient warmup steps')
 parser.add_argument('--wdecay', type=float, default=5e-7,
                     help='weight decay applied to all weights')
 parser.add_argument('--unrolled', action='store_true',
@@ -123,6 +125,7 @@ ntokens = len(par_corpus.dictionary)
 model = MdRnnModel(ntokens, args.emsize, args.nhid, args.nhidlast,
                    args.dropout, args.dropouth, args.dropoutx, args.dropouti, args.dropoute,
                    genotype=None, n_domains=2).to(args.device)
+reg_sch = ConstantSchedulerWithWarmup(args.warmup_steps_struct, args.beta_struct)
 # TODO: add domains to argparser, domain-agnostic dataset and add domain_idx to forward pass
 
 size = 0
@@ -195,7 +198,8 @@ def train():
         betas = [[t for key, t in model.struct_named_parameters() if key.split(
             '.')[-1] == d and 'beta' in key] for d in ['0', '1']]
         struct_loss = struct_intersect_loss(alphas[0], betas[0], alphas[1], betas[1])
-        (arch_loss / 2 + contr_loss * args.beta_contr + struct_loss * args.beta_struct).backward()
+        (arch_loss / 2 + contr_loss * args.beta_contr + struct_loss * reg_sch.get_value()).backward()
+        reg_sch.step()
         arch_optimizer.step()
 
         optimizer.zero_grad()
