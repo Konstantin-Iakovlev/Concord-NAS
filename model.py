@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import RelaxedOneHotCategorical
 from genotypes import STEPS, PRIMITIVES, DARTS_V2, CONCAT
 from collections import OrderedDict
 from utils import mask2d
@@ -92,7 +93,8 @@ def triplet_loss(en_hiddens: torch.Tensor, de_hiddens: torch.Tensor) -> torch.Te
 class MdDartsRnnLayerChoice(nn.Module):
     def __init__(self, layer_choice: LayerChoice,
                  n_domains: int = 1,
-                 sampling_mode: str = 'softmax'):
+                 sampling_mode: str = 'gumbel-softmax',
+                 temperature: float = 0.2):
         """DARTS layer choice parametrized by alpha
 
         :param layer_choice: layer choice
@@ -102,6 +104,7 @@ class MdDartsRnnLayerChoice(nn.Module):
         super().__init__()
         self.label = layer_choice.label
         self.sampling_mode = sampling_mode
+        self.t = temperature
         self.op_choices = nn.ModuleDict(OrderedDict(
             [(name, layer_choice[name]) for name in layer_choice.names]))
         num_prev_nodes = int(self.label[5:])
@@ -126,11 +129,12 @@ class MdDartsRnnLayerChoice(nn.Module):
             weights = self.alpha[domain_idx].softmax(-1).t()  # (ops, num_prev)
             # edge normalization
             weights = weights *  self.beta[domain_idx].softmax(-1)[None]
-            weights = weights.view(
-                list(weights.shape) + [1] * (len(unweighted.shape) - 2))
+        elif self.sampling_mode == 'gumbel-softmax':
+            weights = RelaxedOneHotCategorical(logits=self.alpha[domain_idx], temperature=self.t).rsample().t()
+            weights = weights * RelaxedOneHotCategorical(logits=self.beta[domain_idx], temperature=self.t).rsample()[None]
         else:
             raise NotImplementedError
-
+        weights = weights.view(list(weights.shape) + [1] * (len(unweighted.shape) - 2))
         weighted = (unweighted * weights).sum(dim=[0, 1])
         return weighted
 
