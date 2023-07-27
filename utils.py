@@ -5,6 +5,8 @@ import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
 import json
+from genotypes import PRIMITIVES, STEPS
+from typing import Optional
 
 
 class ConstantSchedulerWithWarmup:
@@ -117,3 +119,19 @@ def mask2d(B, D, keep_prob):
     m = torch.floor(torch.rand(B, D) + keep_prob) / keep_prob
     return m
 
+
+def generate_arch(seed: int, shared_edges: int):
+    np.random.seed(seed)
+    op_names = list(set(PRIMITIVES.keys()) - {'none'})
+    shared_positions = np.random.choice(STEPS, size=(shared_edges,), replace=False)
+    arch = [[], []]
+    for i in range(1, STEPS + 1):
+        if i - 1 in shared_positions:
+            prev_node = np.random.choice(i)
+            op_name = np.random.choice(op_names)
+            arch[0].append([op_name, prev_node])
+            arch[1].append([op_name, prev_node])
+        else:
+            arch[0].append([np.random.choice(op_names), np.random.choice(i)])
+            arch[1].append([np.random.choice(op_names), np.random.choice(i)])
+    return arch         
