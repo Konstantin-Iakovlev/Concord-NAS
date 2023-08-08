@@ -14,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import gc
 
-from data import BatchParallelLoader, ParallelSentenceCorpus
+from data import BatchParallelLoader, ParallelSentenceCorpus, SearchBatchParallelLoader
 from model import MdRnnModel, triplet_loss, nll_lm_loss, get_eos_embeds, struct_reg_loss, struct_intersect_loss
 
 from utils import create_exp_dir, save_checkpoint, ConstantSchedulerWithWarmup
@@ -27,6 +27,7 @@ parser.add_argument('--max_len', type=int, default=500,
                     help='maximal sentence length for each language')
 parser.add_argument('--min_len', type=int, default=0,
                     help='minimal sentence length for each language')
+parser.add_argument('--seq_len', type=int, default=35, help='sequence length')
 parser.add_argument('--device', type=str, default='cuda',
                     help='device: cpu, cuda')
 parser.add_argument('--emsize', type=int, default=300,
@@ -112,10 +113,10 @@ eval_n_tokens = 2000
 test_n_tokens = 2000
 
 par_corpus = ParallelSentenceCorpus(args.data)
-train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
-search_loader = BatchParallelLoader(
-    par_corpus.valid_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
+train_loader = SearchBatchParallelLoader(par_corpus.train_parallel, n_tokens=args.n_tokens,
+                                         seq_len=args.seq_len, device=args.device)
+search_loader = SearchBatchParallelLoader(par_corpus.valid_parallel, n_tokens=args.n_tokens,
+                                          seq_len=args.seq_len, device=args.device)
 valid_loader = BatchParallelLoader(
     par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(

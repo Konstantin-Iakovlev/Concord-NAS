@@ -202,4 +202,30 @@ class BatchParallelLoader:
     
     def __len__(self):
         return len(self.sents)
-        
+    
+
+class SearchBatchParallelLoader:
+    def __init__(self, sents_: Tuple[List[torch.LongTensor], List[torch.LongTensor]],
+                 n_tokens: int, seq_len: int, device='cpu') -> None:
+        self.en_sents = torch.cat(sents_[0])
+        self.de_sents = torch.cat(sents_[1])
+        assert n_tokens % 2 == 0
+        assert (n_tokens // 2) % seq_len == 0
+        self.n_tokens = n_tokens
+        self.seq_len = seq_len
+        self.device = device
+    
+    def __iter__(self):
+        self.idx = 0
+        return self
+    
+    def __next__(self):
+        if self.idx >= self.__len__() * self.n_tokens // 2:
+            raise StopIteration
+        en_batch = self.en_sents[self.idx: self.idx + self.n_tokens // 2].reshape(-1, self.seq_len)
+        de_batch = self.de_sents[self.idx: self.idx + self.n_tokens // 2].reshape(-1, self.seq_len)
+        self.idx += self.n_tokens // 2
+        return en_batch.to(self.device), de_batch.to(self.device)
+
+    def __len__(self):
+        return self.en_sents.shape[0] // (self.n_tokens // 2)
