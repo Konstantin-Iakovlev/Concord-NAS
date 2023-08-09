@@ -16,7 +16,7 @@ import json
 from torch.utils.tensorboard import SummaryWriter
 
 from model import nll_lm_loss, triplet_loss, get_eos_embeds
-from data import BatchParallelLoader, ParallelSentenceCorpus
+from data import BatchParallelLoader, ParallelSentenceCorpus, SearchBatchParallelLoader
 from utils import create_exp_dir, save_checkpoint
 from utils import repackage_hidden, create_exp_dir, save_checkpoint
 
@@ -36,6 +36,7 @@ parser.add_argument('--max_len', type=int, default=500,
                     help='maximal sentence length for each language')
 parser.add_argument('--min_len', type=int, default=0,
                     help='minimal sentence length for each language')
+parser.add_argument('--seq_len', type=int, default=35, help='sequence length')
 parser.add_argument('--device', type=str, default='cuda',
                     help='device: cpu, cuda')
 parser.add_argument('--emsize', type=int, default=850,
@@ -111,8 +112,8 @@ par_corpus = ParallelSentenceCorpus(args.data)
 
 eval_n_tokens = 2000
 test_n_tokens = 2000
-train_loader = BatchParallelLoader(
-    par_corpus.train_parallel, args.n_tokens, device=args.device, max_len=args.max_len, min_len=args.min_len)
+train_loader = SearchBatchParallelLoader(par_corpus.train_parallel, n_tokens=args.n_tokens,
+                                         seq_len=args.seq_len, device=args.device)
 valid_loader = BatchParallelLoader(
     par_corpus.valid_parallel, eval_n_tokens, device=args.device)
 test_loader = BatchParallelLoader(
