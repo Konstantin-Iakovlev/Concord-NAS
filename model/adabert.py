@@ -3,7 +3,6 @@ import torch.nn as nn
 from .ops import ConvBN, Pool, Zero, Identity
 from torch.distributions import RelaxedOneHotCategorical
 
-# TODO: share structural parameters
 # TODO: attention maks conflict when using is_pair = True
 
 
@@ -169,12 +168,11 @@ class AdaBertStudent(nn.Module):
         """genotype: List[List[(op, id)]]"""
         super().__init__()
         self.token_embeds = nn.Embedding(vocab_size, emb_size)
-        emb_matrix = torch.load('low_rank_emb.pth')
+        emb_matrix = torch.load('qnli_low_rank_emb.pth')
         self.token_embeds.weight.data = emb_matrix.data
         cells = []
         for i in range(num_cells):
             cell = Cell(num_interm_nodes, emb_size, dropout_p, genotype)
-            # TODO: share parameters here
             if i > 0 and genotype is None:
                 for node, ref_node in zip(cell.nodes, cells[-1].nodes):
                     assert node.edges.keys() == ref_node.edges.keys()
