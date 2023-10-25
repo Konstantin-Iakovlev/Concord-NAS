@@ -105,7 +105,7 @@ def main():
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=lr)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-3)
     criterion = nn.CrossEntropyLoss()
 
     
