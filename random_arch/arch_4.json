@@ -1,0 +1,1 @@
+[[["dilconv5x5", 1], ["conv7x7", 0]], [["dilconv5x5", 2], ["dilconv7x7", 0]], [["dilconv5x5", 3], ["dilconv5x5", 0]]]
