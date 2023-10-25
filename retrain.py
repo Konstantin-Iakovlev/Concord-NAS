@@ -10,9 +10,23 @@ from tqdm.auto import tqdm
 import json
 
 
-def collate_fn(data_points, tok: AutoTokenizer, max_length=128):  # pair = True
-    s1 = tok([d['sentence1'] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
-    s2 = tok([d['sentence2'] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
+task_to_keys = {
+    "cola": ("sentence", None),
+    "mnli": ("premise", "hypothesis"),
+    "mrpc": ("sentence1", "sentence2"),
+    "qnli": ("question", "sentence"),
+    "qqp": ("question1", "question2"),
+    "rte": ("sentence1", "sentence2"),
+    "sst2": ("sentence", None),
+    "stsb": ("sentence1", "sentence2"),
+    "wnli": ("sentence1", "sentence2"),
+}
+
+
+def collate_fn(data_points, tok: AutoTokenizer, max_length=128, ds_name='qnli'):  # pair = True
+    k1, k2 = task_to_keys[ds_name]
+    s1 = tok([d[k1] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
+    s2 = tok([d[k2] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
     s1_inp = s1['input_ids']
     s2_inp = s2['input_ids']
     inp_ids = torch.zeros(2, s1_inp.shape[0], max(s1_inp.shape[1], s2_inp.shape[1])).long().fill_(tok.pad_token_id)
@@ -48,7 +62,9 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--arch_path', required=True)
     parser.add_argument('--epochs', required=False, type=int, default=20)
+    parser.add_argument('--valid_freq', required=False, type=int, default=200)
     parser.add_argument('--device', required=False, type=str, default='cuda')
+    parser.add_argument('--ds_name', required=False, type=str, default='qnli')
     args = parser.parse_args()
     with open(args.arch_path) as f:
         genotype = json.load(f)
@@ -76,18 +92,20 @@ def main():
     np.random.seed(seed)
 
 
-    train_ds = RteDataset(split='train')
-    val_ds = RteDataset(split='validation')
+    train_ds = RteDataset(args.ds_name, split='train')
+    val_ds = RteDataset(args.ds_name, split='validation')
     tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
-    train_dl = DataLoader(train_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer, max_length), shuffle=True)
-    val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer, max_length), shuffle=False)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
+                                                                                           max_length, args.ds_name), shuffle=True)
+    val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
+                                                                                       max_length, args.ds_name), shuffle=False)
 
     # genotype = [[('conv7x7', 0), ('maxpool', 1)],
     #             [('maxpool', 1), ('maxpool', 2)],
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-4)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=lr)
     criterion = nn.CrossEntropyLoss()
 
     
@@ -113,7 +131,7 @@ def main():
             if total_steps % valid_freq == 0:
                 val_acc = evaluate(model, val_dl, device)
                 val_accs.append(val_acc)
-                print(f'Step: {total_steps}, val acc: {round(val_acc, 4)}')
+                print(f'Step: {total_steps}, val acc: {round(val_acc, 4)}, best: {round(max(val_accs), 4)}')
 
         lr_scheduler.step()
 

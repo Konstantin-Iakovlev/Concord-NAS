@@ -7,10 +7,10 @@ import numpy as np
 
 
 class RteDataset(Dataset):
-    def __init__(self, split='train') -> None:
+    def __init__(self, ds_name, split='train') -> None:
         super().__init__()
-        self.raw_ds = load_dataset("glue", 'rte', cache_dir='.')[split]
-        self.distil_logits = np.load(f'analysis/{split}_logits.npy')
+        self.raw_ds = load_dataset("glue", ds_name, cache_dir='.')[split]
+        self.distil_logits = np.load(f'analysis/{ds_name}_logits_{split}.npy')
         assert len(self.raw_ds) == self.distil_logits.shape[0]
     
     def __getitem__(self, index):
