@@ -105,7 +105,7 @@ def main():
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-3)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
     criterion = nn.CrossEntropyLoss()
 
     
@@ -123,17 +123,16 @@ def main():
             loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
             optimizer.step()
+            lr_scheduler.step()
 
             total_steps += 1
             if i % log_freq == 0 and i > 0:
-                print('Train', loss.item(), (pi_logits.argmax(-1) == p_logits.argmax(-1)).float().mean())
+                print('Train acc', round((pi_logits.argmax(-1) == p_logits.argmax(-1)).float().mean().item(), 4))
         
             if total_steps % valid_freq == 0:
                 val_acc = evaluate(model, val_dl, device)
                 val_accs.append(val_acc)
                 print(f'Step: {total_steps}, val acc: {round(val_acc, 4)}, best: {round(max(val_accs), 4)}')
-
-        lr_scheduler.step()
 
     print('Finished with', round(max(val_accs), 4))
 
