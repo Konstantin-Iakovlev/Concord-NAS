@@ -47,6 +47,8 @@ def evaluate(model, dl, device):
 def main():
     parser = ArgumentParser()
     parser.add_argument('--arch_path', required=True)
+    parser.add_argument('--epochs', required=False, type=int, default=20)
+    parser.add_argument('--device', required=False, type=str, default='cuda')
     args = parser.parse_args()
     with open(args.arch_path) as f:
         genotype = json.load(f)
@@ -54,8 +56,8 @@ def main():
     max_length = 128
     batch_size = 64
     lr = 0.025
-    device = 'cpu'
-    epochs = 10
+    device = args.device
+    epochs = args.epochs
     log_freq = 20
     valid_freq = 30
     seed = 2
