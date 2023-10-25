@@ -24,7 +24,8 @@ class ConvBN(nn.Module):
         super().__init__()
         padding = ((2 if dilation else 1) * (kernel_size - 1)) // 2
         self.conv = nn.Conv1d(channels, channels, kernel_size, 1, padding, 2 if dilation else 1, bias=False)
-        self.bn = nn.LayerNorm(channels)
+        # self.bn = nn.LayerNorm(channels)
+        self.bn = nn.BatchNorm1d(channels)
     
     def forward(self, x: torch.Tensor, mask: torch.Tensor):
         """
@@ -34,8 +35,8 @@ class ConvBN(nn.Module):
         out = torch.relu(x)
         att_mask = mask[..., None]
         out = out * att_mask
-        out = self.conv(out.transpose(1, 2)).transpose(1, 2)
-        out = self.bn(out)
+        out = self.bn(self.conv(out.transpose(1, 2))).transpose(1, 2)
+        # out = self.bn(out)
         return out
 
 class Identity(nn.Module):
