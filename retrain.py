@@ -7,6 +7,7 @@ from transformers import AutoTokenizer
 from model import AdaBertStudent
 import numpy as np
 from tqdm.auto import tqdm
+import json
 
 
 def collate_fn(data_points, tok: AutoTokenizer, max_length=128):  # pair = True
@@ -44,8 +45,12 @@ def evaluate(model, dl, device):
 
 
 def main():
-    # parser = ArgumentParser()
-    # args = parser.parse_args()
+    parser = ArgumentParser()
+    parser.add_argument('--arch_path', required=True)
+    args = parser.parse_args()
+    with open(args.arch_path) as f:
+        genotype = json.load(f)
+
     max_length = 128
     batch_size = 64
     lr = 0.025
@@ -54,7 +59,8 @@ def main():
     log_freq = 20
     valid_freq = 30
     seed = 2
-    # 0 : 61.37; 1: 62.82; 2: 60.65
+    # Optimal on SST2 => 0 : 61.37; 1: 62.82; 2: 60.65
+    # Random(0) => 2: 0.6354 
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -66,9 +72,9 @@ def main():
     train_dl = DataLoader(train_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer, max_length), shuffle=True)
     val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer, max_length), shuffle=False)
 
-    genotype = [[('conv7x7', 0), ('maxpool', 1)],
-                [('maxpool', 1), ('maxpool', 2)],
-                [('conv3x3', 1), ('dilconv3x3', 3)]]
+    # genotype = [[('conv7x7', 0), ('maxpool', 1)],
+    #             [('maxpool', 1), ('maxpool', 2)],
+    #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     criterion = nn.CrossEntropyLoss()
