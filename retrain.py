@@ -75,7 +75,7 @@ def main():
     device = args.device
     epochs = args.epochs
     log_freq = 20
-    valid_freq = 30
+    valid_freq = args.valid_freq
     seed = 2
 
     # teacher val acc: 0.6498194945848376
