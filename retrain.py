@@ -61,8 +61,16 @@ def main():
     log_freq = 20
     valid_freq = 30
     seed = 2
-    # Optimal on SST2 => 0 : 61.37; 1: 62.82; 2: 60.65
-    # Random(0) => 2: 0.6354 
+
+    # teacher val acc: 0.6498194945848376
+    #### 50 epochs
+    # random(0) => 2: 0.657
+    # random(1) => 2: 0.639
+    # random(2) => 2: 0.639    
+    # random(3) => 2: 0.6101
+    # random(4) => 2: 0.6209
+
+    # suboptimal and efficient searched on SST2 => 2: 0.639
 
     torch.manual_seed(seed)
     np.random.seed(seed)
