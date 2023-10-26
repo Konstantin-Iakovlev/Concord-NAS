@@ -100,8 +100,10 @@ def main():
     #             [('maxpool', 1), ('maxpool', 2)],
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli')
-    pretrained_embeddigns = m.embeddings.word_embeddings.weight
-    model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_embeddigns,
+    pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
+    pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
+    model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_token_embeddigns,
+                           pretrained_pos_embeddigns,
                            genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)

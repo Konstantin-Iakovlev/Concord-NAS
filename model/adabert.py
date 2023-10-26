@@ -159,7 +159,8 @@ class AdaBertStudent(nn.Module):
                  vocab_size,
                  is_pair_task,
                  num_classes,
-                 pretrained_embeddings,
+                 pretrained_token_embeddings,
+                 pretrained_pos_embeddings,
                  num_interm_nodes = 3,
                  num_cells = 8,
                  emb_size = 128,
@@ -168,10 +169,13 @@ class AdaBertStudent(nn.Module):
                  ) -> None:
         """genotype: List[List[(op, id)]]"""
         super().__init__()
-        self.token_embeds = nn.Embedding(vocab_size, pretrained_embeddings.shape[1])
-        self.token_embeds.weight = pretrained_embeddings
+        self.token_embeds = nn.Embedding(vocab_size, pretrained_token_embeddings.shape[1])
+        self.token_embeds.weight = pretrained_token_embeddings
         self.token_embeds.requires_grad = False # freeze pretrained embeddings
-        self.fact_map = nn.Linear(pretrained_embeddings.shape[1], emb_size)
+        self.pos_embeds = nn.Embedding(pretrained_pos_embeddings.shape[0], pretrained_pos_embeddings.shape[1])
+        self.pos_embeds.weight = pretrained_pos_embeddings
+        self.pos_embeds.weight.requires_grad = False
+        self.fact_map = nn.Linear(pretrained_token_embeddings.shape[1], emb_size)
         cells = []
         for i in range(num_cells):
             cell = Cell(num_interm_nodes, emb_size, dropout_p, genotype)
@@ -188,7 +192,8 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
     
     def forward(self, ids: torch.LongTensor, msk: torch.Tensor):
-        x = self.fact_map(self.token_embeds(ids))
+        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape)
+        x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids))
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
         else:
