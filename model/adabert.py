@@ -192,7 +192,7 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
     
     def forward(self, ids: torch.LongTensor, msk: torch.Tensor):
-        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape)
+        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids))
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
