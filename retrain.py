@@ -25,13 +25,9 @@ task_to_keys = {
 
 def collate_fn(data_points, tok: AutoTokenizer, max_length=128, ds_name='qnli'):  # pair = True
     k1, k2 = task_to_keys[ds_name]
-    s1 = tok([d[k1] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
-    s2 = tok([d[k2] for d in data_points], return_tensors='pt', padding=True, max_length=max_length, truncation=True)
-    s1_inp = s1['input_ids']
-    s2_inp = s2['input_ids']
-    inp_ids = torch.zeros(2, s1_inp.shape[0], max(s1_inp.shape[1], s2_inp.shape[1])).long().fill_(tok.pad_token_id)
-    inp_ids[0, :, :s1_inp.shape[1]] = s1_inp
-    inp_ids[1, :, :s2_inp.shape[1]] = s2_inp
+    tok_out = tok([d[k1] for d in data_points], [d[k2] for d in data_points], return_tensors='pt',
+                  padding=True, max_length=max_length, truncation=True)
+    inp_ids = torch.stack([tok_out['input_ids'], tok_out['input_ids']], dim=0)
     logits = torch.tensor(np.stack([b['logits'] for b in data_points], axis=0))
     return {'labels': torch.LongTensor([d['label'] for d in data_points]), 'inp_ids': inp_ids,
             'att': (inp_ids != tok.pad_token_id).long(), 'logits': logits}
