@@ -99,7 +99,12 @@ def main():
     # genotype = [[('conv7x7', 0), ('maxpool', 1)],
     #             [('maxpool', 1), ('maxpool', 2)],
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
-    m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli')
+    if args.ds_name == 'qnli':
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli')
+    elif args.ds_name == 'rte':
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte')
+    else:
+        raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_token_embeddigns,
