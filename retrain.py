@@ -74,15 +74,16 @@ def main():
     valid_freq = args.valid_freq
     seed = 2
 
+    ### RTE dataset
     # teacher val acc: 0.6498194945848376
-    #### 50 epochs
-    # random(0) => 2: 0.657
-    # random(1) => 2: 0.639
-    # random(2) => 2: 0.639    
-    # random(3) => 2: 0.6101
-    # random(4) => 2: 0.6209
+    #### 30 epochs
+    # random(0) => 2: 0.5704
+    # random(1) => 2: 0.5957
+    # random(2) => 2: 0.574
+    # random(3) => 2: 0.6137
+    # random(4) => 2: 0.6029 
+    # => random 0.5913 +- 0.0167
 
-    # suboptimal and efficient searched on SST2 => 2: 0.639
 
     torch.manual_seed(seed)
     np.random.seed(seed)
