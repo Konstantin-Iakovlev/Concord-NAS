@@ -95,7 +95,8 @@ def main():
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns,
                            genotype=None, dropout_p=0.0).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+    optimizer = torch.optim.SGD([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, momentum=0.9)
+    optimizer_struct = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' in name], lr=3e-4, weight_decay=1e-3)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
     criterion = nn.CrossEntropyLoss()
 
@@ -111,10 +112,12 @@ def main():
             msk = batch['att'].max(0).values
             p_logits = model(inp_ids, msk)
             optimizer.zero_grad()
+            optimizer_struct.zero_grad()
             # optimize the structural parameters on the training split
             loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
             optimizer.step()
+            optimizer_struct.step()
             lr_scheduler.step()
 
             total_steps += 1
