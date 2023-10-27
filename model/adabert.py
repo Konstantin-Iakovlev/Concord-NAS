@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .ops import ConvBN, Pool, Zero, Identity
 from torch.distributions import RelaxedOneHotCategorical
+import numpy as np
 
 # TODO: attention maks conflict when using is_pair = True
 
@@ -47,6 +48,9 @@ class LayerChoice(nn.Module):
         weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.1).rsample().reshape(-1, 1, 1, 1)
         out = (weights * mixed_out).sum(0)
         return out
+    
+    def export(self):
+        return self.op_names[self.alpha.argmax(-1).item()]
 
 
 class OneHotLayerChoice(nn.Module):
@@ -90,6 +94,9 @@ class InputSwitch(nn.Module):
         """inputs: (n_cand, bs, seq_len, hidden)"""
         weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
         return (weights * inputs).sum(0)
+    
+    def export(self):
+        return np.argsort(self.alpha.detach().cpu().numpy())[-2:]
 
 
 class Node(nn.Module):
@@ -114,6 +121,11 @@ class Node(nn.Module):
         for key, op in self.edges.items():
             res.append(op(prev_nodes[int(key)], msk))
         return self.input_switch(torch.stack(res, 0))
+    
+    def export(self):
+        selected_edges = self.input_switch.export()
+        selected_ops = [self.edges[f'{i}'].export() for i in selected_edges]
+        return [[op, i] for op, i in zip(selected_ops, selected_edges)]
 
 
 def test_node():
@@ -144,6 +156,9 @@ class Cell(nn.Module):
         out = torch.stack(inputs[2:], dim=0)  # (n_nodes, bs, seq_len, hidden)
         weights = torch.softmax(self.att_weights, -1).reshape(-1, 1, 1, 1)
         return (out * weights).sum(0)
+    
+    def export(self):
+        return [n.export() for n in self.nodes]
 
 
 def test_cell():
@@ -203,6 +218,9 @@ class AdaBertStudent(nn.Module):
         out = s1.mean(1)  # (bs, hidden)
         logits = self.mlp(out)
         return logits
+    
+    def export(self):
+        return self.cells[0].export()
 
 
 def test_bert():
