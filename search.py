@@ -130,7 +130,7 @@ def main():
             if total_steps % valid_freq == 0:
                 val_acc = evaluate(model, val_dl, device)
                 val_accs.append(val_acc)
-                if val_acc >= max(val_accs[:-1]):
+                if val_acc >= max(val_accs):
                     best_arch = model.export()
                 print(f'Step: {total_steps}, val acc: {round(val_acc, 4)}, best: {round(max(val_accs), 4)}')
 
