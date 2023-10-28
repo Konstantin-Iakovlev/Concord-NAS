@@ -64,8 +64,9 @@ def main():
     args = parser.parse_args()
 
     max_length = 128
-    batch_size = 64
+    batch_size = 128
     lr = 0.025
+    num_cells = 4
     device = args.device
     epochs = args.epochs
     log_freq = 20
@@ -85,15 +86,15 @@ def main():
                                                                                        max_length, args.ds_name), shuffle=False)
 
     if args.ds_name == 'qnli':
-        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli')
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli', cache_dir='.')
     elif args.ds_name == 'rte':
-        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte')
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte', cache_dir='.')
     else:
         raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_token_embeddigns,
-                           pretrained_pos_embeddigns,
+                           pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=None, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, momentum=0.9)
     optimizer_struct = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' in name], lr=3e-4, weight_decay=1e-3)
@@ -103,6 +104,7 @@ def main():
     
     total_steps = 0
     val_accs = []
+    best_arch = model.export()
     for epoch in range(epochs):
         model.train()
         for i, batch in enumerate(tqdm(train_dl)):
@@ -128,12 +130,14 @@ def main():
             if total_steps % valid_freq == 0:
                 val_acc = evaluate(model, val_dl, device)
                 val_accs.append(val_acc)
+                if val_acc >= max(val_accs[:-1]):
+                    best_arch = model.export()
                 print(f'Step: {total_steps}, val acc: {round(val_acc, 4)}, best: {round(max(val_accs), 4)}')
 
     print('Finished with', round(max(val_accs), 4))
-    print('Final architecture', model.export())
+    print('Final architecture', best_arch)
     with open('final_arch.json', 'w') as f:
-        f.write(json.dumps(model.export()))
+        f.write(json.dumps(best_arch))
 
 
 if __name__ == '__main__':

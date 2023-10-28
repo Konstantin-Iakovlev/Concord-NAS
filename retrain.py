@@ -101,9 +101,9 @@ def main():
     #             [('maxpool', 1), ('maxpool', 2)],
     #             [('conv3x3', 1), ('dilconv3x3', 3)]]
     if args.ds_name == 'qnli':
-        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli')
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli', cache_dir='.')
     elif args.ds_name == 'rte':
-        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte')
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte', cache_dir='.')
     else:
         raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
