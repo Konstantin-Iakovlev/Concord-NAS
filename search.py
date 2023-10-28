@@ -84,6 +84,8 @@ def main():
                                                                                            max_length, args.ds_name), shuffle=True)
     val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
                                                                                        max_length, args.ds_name), shuffle=False)
+    search_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
+                                                                                       max_length, args.ds_name), shuffle=True)
 
     if args.ds_name == 'qnli':
         m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli', cache_dir='.')
@@ -113,14 +115,25 @@ def main():
             inp_ids = batch['inp_ids']
             msk = batch['att'].max(0).values
             p_logits = model(inp_ids, msk)
+
+            # weights update
             optimizer.zero_grad()
-            optimizer_struct.zero_grad()
-            # optimize the structural parameters on the training split
             loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
             optimizer.step()
-            optimizer_struct.step()
             lr_scheduler.step()
+
+            # structure update
+            for val_batch in search_dl:
+                val_batch = {k: val_batch[k].to(device) for k in val_batch}
+                pi_logits = val_batch['logits']
+                inp_ids = val_batch['inp_ids']
+                msk = val_batch['att'].max(0).values
+                p_logits = model(inp_ids, msk)
+                optimizer_struct.zero_grad()
+                loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
+                optimizer_struct.step()
+                break
 
             total_steps += 1
             if i % log_freq == 0 and i > 0:
