@@ -66,7 +66,7 @@ def main():
     max_length = 128
     batch_size = 128
     lr = 0.025
-    num_cells = 4
+    num_cells = 3
     device = args.device
     epochs = args.epochs
     log_freq = 20
@@ -132,6 +132,7 @@ def main():
                 p_logits = model(inp_ids, msk)
                 optimizer_struct.zero_grad()
                 loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
+                loss.backward()
                 optimizer_struct.step()
                 break
 
