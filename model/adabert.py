@@ -96,7 +96,7 @@ class InputSwitch(nn.Module):
         return (weights * inputs).sum(0)
     
     def export(self):
-        return np.argsort(self.alpha.detach().cpu().numpy())[-2:]
+        return np.argsort(self.alpha.detach().cpu().numpy())[-2:].tolist()
 
 
 class Node(nn.Module):
