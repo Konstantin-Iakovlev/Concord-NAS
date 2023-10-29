@@ -68,6 +68,7 @@ def main():
     max_length = 128
     batch_size = 64
     lr = 0.025
+    clip_value = 1.0
     device = args.device
     epochs = args.epochs
     log_freq = 20
@@ -129,6 +130,7 @@ def main():
             optimizer.zero_grad()
             loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             optimizer.step()
             lr_scheduler.step()
 
