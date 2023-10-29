@@ -66,7 +66,7 @@ def main():
         genotype = json.load(f)
 
     max_length = 128
-    batch_size = 64
+    batch_size = 128
     lr = 0.025
     clip_value = 1.0
     device = args.device
