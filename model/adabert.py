@@ -191,6 +191,7 @@ class AdaBertStudent(nn.Module):
         self.pos_embeds.weight = pretrained_pos_embeddings
         self.pos_embeds.weight.requires_grad = False
         self.fact_map = nn.Linear(pretrained_token_embeddings.shape[1], emb_size)
+        self.type_embeds = nn.Embedding(2, emb_size)
         cells = []
         for i in range(num_cells):
             cell = Cell(num_interm_nodes, emb_size, dropout_p, genotype)
@@ -206,9 +207,9 @@ class AdaBertStudent(nn.Module):
         self.mlp = nn.Sequential(nn.Tanh(), nn.Dropout(dropout_p), nn.Linear(emb_size, num_classes))
         self.is_pair_task = is_pair_task
     
-    def forward(self, ids: torch.LongTensor, msk: torch.Tensor):
+    def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
         pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
-        x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids))
+        x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
         else:
