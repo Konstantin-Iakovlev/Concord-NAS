@@ -208,12 +208,13 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
     
     def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
+        ids = ids[None]
         pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
         else:
-            s0 = s1 = x
+            s0 = s1 = x[0]
         for _, cell in enumerate(self.cells):
             s0, s1 = s1, cell(s0, s1, msk)
         out = s1.mean(1)  # (bs, hidden)

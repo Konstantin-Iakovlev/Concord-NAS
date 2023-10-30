@@ -25,10 +25,16 @@ task_to_keys = {
 
 def collate_fn(data_points, tok: AutoTokenizer, max_length=128, ds_name='qnli'):  # pair = True
     k1, k2 = task_to_keys[ds_name]
-    tok_out = tok([d[k1] for d in data_points], [d[k2] for d in data_points], return_tensors='pt',
-                  padding=True, max_length=max_length, truncation=True)
-    inp_ids = torch.stack([tok_out['input_ids'], tok_out['input_ids']], dim=0)
-    type_ids = torch.stack([tok_out['token_type_ids'], tok_out['token_type_ids']], dim=0)
+    if k2 is not None:
+        tok_out = tok([d[k1] for d in data_points], [d[k2] for d in data_points], return_tensors='pt',
+                    padding=True, max_length=max_length, truncation=True)
+        inp_ids = torch.stack([tok_out['input_ids'], tok_out['input_ids']], dim=0)
+        type_ids = torch.stack([tok_out['token_type_ids'], tok_out['token_type_ids']], dim=0)
+    else:
+        tok_out = tok([d[k1] for d in data_points], return_tensors='pt',padding=True,
+                      max_length=max_length, truncation=True)
+        inp_ids = tok_out['input_ids']
+        type_ids = tok_out['token_type_ids']
     logits = torch.tensor(np.stack([b['logits'] for b in data_points], axis=0))
     return {'labels': torch.LongTensor([d['label'] for d in data_points]), 'inp_ids': inp_ids,
             'att': (inp_ids != tok.pad_token_id).long(), 'logits': logits, 'type_ids': type_ids}
@@ -107,11 +113,14 @@ def main():
         m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli', cache_dir='.')
     elif args.ds_name == 'rte':
         m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-rte', cache_dir='.')
+    elif args.ds_name == 'sst2':
+        m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-sst2', cache_dir='.')
     else:
         raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
-    model = AdaBertStudent(tokenizer.vocab_size, True, 2, pretrained_token_embeddigns,
+    model = AdaBertStudent(tokenizer.vocab_size, task_to_keys[args.ds_name][-1] is not None,
+                           2, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns,
                            genotype=genotype, dropout_p=0.0).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
