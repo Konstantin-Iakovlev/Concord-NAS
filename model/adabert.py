@@ -97,7 +97,10 @@ class InputSwitch(nn.Module):
     def forward(self, inputs: torch.Tensor):
         """inputs: (n_cand, bs, seq_len, hidden)"""
         weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
-        return (weights * inputs).sum(0)
+        ids = weights.reshape(-1).topk(self.n_cand).indices
+        w_hard = torch.zeros_like(weights)
+        w_hard[ids] = 1 / self.n_cand
+        return ((weights + (w_hard - weights).detach()) * inputs).sum(0)
     
     def export(self):
         return np.argsort(self.alpha.detach().cpu().numpy())[-2:].tolist()
