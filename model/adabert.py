@@ -45,8 +45,12 @@ class LayerChoice(nn.Module):
     
     def forward(self, x: torch.Tensor, msk: torch.Tensor):
         mixed_out = torch.stack([op(x, msk) for op in self.ops], 0)
-        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.1).rsample().reshape(-1, 1, 1, 1)
-        out = (weights * mixed_out).sum(0)
+        # weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.1).rsample().reshape(-1, 1, 1, 1)
+        weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
+        idx = weights.reshape(-1).argmax()
+        hard_w = torch.zeros_like(weights)
+        hard_w[idx] = 1.0
+        out = (((hard_w - weights).detach() + weights) * mixed_out).sum(0)
         return out
     
     def export(self):
@@ -229,9 +233,13 @@ def test_bert():
     genotype = [[('conv7x7', 0), ('maxpool', 1)],
                 [('maxpool', 1), ('maxpool', 2)],
                 [('conv3x3', 1), ('dilconv3x3', 3)]]
-    bert = AdaBertStudent(30_522, False, 2, genotype=None)
+    pret_embed = nn.Parameter(torch.randn(30_522, 768))
+    pret_pos = nn.Parameter(torch.randn(512, 768))
+    bert = AdaBertStudent(30_522, False, 2, pret_embed, pret_pos, genotype=None)
     ids = torch.zeros(3, 32).long()
+    type_ids = torch.zeros(3, 32).long()
     msk = torch.ones(3, 32)
-    out = bert(ids, msk)
+    out = bert(ids, type_ids, msk)
     print("total params", sum([p.numel() for p in bert.parameters()]))
     assert out.shape == (3, 2)
+    assert bert.cells[0].export() == bert.cells[1].export()
