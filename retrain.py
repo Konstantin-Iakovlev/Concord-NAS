@@ -74,7 +74,8 @@ def main():
         genotype = json.load(f)
 
     max_length = 128
-    batch_size = 128
+    batch_size = 64
+    num_cells = 2
     lr = 0.025
     clip_value = 1.0
     device = args.device
@@ -121,9 +122,9 @@ def main():
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, task_to_keys[args.ds_name][-1] is not None,
                            2, pretrained_token_embeddigns,
-                           pretrained_pos_embeddigns,
-                           genotype=genotype, dropout_p=0.0).to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+                           pretrained_pos_embeddigns, num_cells=2,
+                           genotype=genotype, dropout_p=0.1).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=3e-4)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
     criterion = nn.CrossEntropyLoss()
 

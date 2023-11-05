@@ -45,12 +45,9 @@ class LayerChoice(nn.Module):
     
     def forward(self, x: torch.Tensor, msk: torch.Tensor):
         mixed_out = torch.stack([op(x, msk) for op in self.ops], 0)
-        # weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.1).rsample().reshape(-1, 1, 1, 1)
-        weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
-        idx = weights.reshape(-1).argmax()
-        hard_w = torch.zeros_like(weights)
-        hard_w[idx] = 1.0
-        out = (((hard_w - weights).detach() + weights) * mixed_out).sum(0)
+        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.3).rsample().reshape(-1, 1, 1, 1)
+        # weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
+        out = (weights * mixed_out).sum(0)
         return out
     
     def export(self):
@@ -153,7 +150,6 @@ class Cell(nn.Module):
         for depth in range(2, n_nodes + 2):
             nodes.append(Node(f'n{depth}', depth, channels, genotype[depth - 2] if genotype is not None else genotype))
         self.nodes = nn.ModuleList(nodes)
-        self.att_weights = nn.Parameter(torch.randn(n_nodes) * 1e-3)
     
     def forward(self, s0, s1, msk):
         inputs = [self.preprocess[0](s0), self.preprocess[1](s1)]
@@ -161,8 +157,7 @@ class Cell(nn.Module):
             out = node(inputs, msk)
             inputs.append(out)
         out = torch.stack(inputs[2:], dim=0)  # (n_nodes, bs, seq_len, hidden)
-        weights = torch.softmax(self.att_weights, -1).reshape(-1, 1, 1, 1)
-        return (out * weights).sum(0)
+        return out.mean(0)
     
     def export(self):
         return [n.export() for n in self.nodes]
@@ -215,7 +210,8 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
     
     def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
-        ids = ids[None]
+        if not self.is_pair_task:
+            ids = ids[None]
         pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
         if self.is_pair_task:
