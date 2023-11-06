@@ -210,9 +210,19 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
     
     def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
+        """Pefrorms a forward pass
+
+        :param ids: tensor of shape (sentences, batch_size, seq_len)
+        :param type_ids: tensor of shape (sentences, batch_size, seq_len)
+        :param msk: tensor of shape (sentences, batch_size, seq_len)
+        :return: tensor of shape (bs)
+        """
         if not self.is_pair_task:
-            ids = ids[None]
-        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
+            pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
+        else:
+            ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
+            first_sent_len = ((1 - type_ids) * msk).sum(-1)[..., None]
+            pos_ids = (1 - type_ids) * ids + type_ids * (ids - first_sent_len)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]

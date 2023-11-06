@@ -34,8 +34,8 @@ def collate_fn(data_points, tok: AutoTokenizer, max_length=128, ds_name='qnli'):
     else:
         tok_out = tok([d[k1] for d in data_points], return_tensors='pt',padding=True,
                       max_length=max_length, truncation=True)
-        inp_ids = tok_out['input_ids']
-        type_ids = tok_out['token_type_ids']
+        inp_ids = tok_out['input_ids'][None]
+        type_ids = tok_out['token_type_ids'][None]
     logits = torch.tensor(np.stack([b['logits'] for b in data_points], axis=0))
     return {'labels': torch.LongTensor([d['label'] for d in data_points]), 'inp_ids': inp_ids,
             'att': (inp_ids != tok.pad_token_id).long(), 'logits': logits, 'type_ids': type_ids}
