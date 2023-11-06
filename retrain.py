@@ -122,7 +122,7 @@ def main():
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, task_to_keys[args.ds_name][-1] is not None,
                            2, pretrained_token_embeddigns,
-                           pretrained_pos_embeddigns, num_cells=2,
+                           pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=3e-4)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
@@ -133,7 +133,7 @@ def main():
     val_accs = []
     for epoch in range(epochs):
         model.train()
-        for i, batch in enumerate(tqdm(train_dl)):
+        for i, batch in enumerate(tqdm(train_dl, desc=f'epoch {epoch}/{epochs}')):
             batch = {k: batch[k].to(device) for k in batch}
             pi_logits = batch['logits']
             inp_ids = batch['inp_ids']

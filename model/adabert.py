@@ -217,12 +217,7 @@ class AdaBertStudent(nn.Module):
         :param msk: tensor of shape (sentences, batch_size, seq_len)
         :return: tensor of shape (bs)
         """
-        if not self.is_pair_task:
-            pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
-        else:
-            ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
-            first_sent_len = ((1 - type_ids) * msk).sum(-1)[..., None]
-            pos_ids = (1 - type_ids) * ids + type_ids * (ids - first_sent_len)
+        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
