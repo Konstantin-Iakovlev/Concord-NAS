@@ -23,6 +23,7 @@ class NliDataset(Dataset):
         }
         self.glue_datasets = set(self.task_to_keys.keys())
         self.task_to_keys["paws-x"] = ("sentence1", "sentence2")
+        self.task_to_keys["xnli"] = ("premise", "hypothesis")
         if ds_name in self.glue_datasets:
             self.raw_ds = load_dataset("glue", ds_name, cache_dir='.')[split]
             self.distil_logits = np.load(f'analysis/{ds_name}_logits_{split}.npy')
