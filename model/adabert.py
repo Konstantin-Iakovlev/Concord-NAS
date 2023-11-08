@@ -247,3 +247,25 @@ def test_bert():
     print("total params", sum([p.numel() for p in bert.parameters()]))
     assert out.shape == (3, 2)
     assert bert.cells[0].export() == bert.cells[1].export()
+
+
+def distil_loss(pi_logits: torch.Tensor, p_scores: torch.Tensor):
+    pi_probs = pi_logits.softmax(-1)
+    return -(pi_probs * torch.log_softmax(p_scores, -1)).sum(-1).mean()
+
+
+def evaluate(model, dl, device):
+    model.eval()
+    n_total = 0
+    n_corr = 0
+    for batch in dl:
+        batch = {k: batch[k].to(device) for k in batch}
+        pi_logits = batch['logits']
+        inp_ids = batch['inp_ids']
+        type_ids = batch['type_ids']
+        msk = batch['att'].max(0).values
+        with torch.no_grad():
+            p_logits = model(inp_ids, type_ids, msk)
+        n_total += p_logits.shape[0]
+        n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
+    return n_corr / n_total

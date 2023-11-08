@@ -3,64 +3,12 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from argparse import ArgumentParser
-from dataset import RteDataset
+from dataset import NliDataset
 from transformers import AutoTokenizer, AutoModel
-from model import AdaBertStudent
+from model import AdaBertStudent, evaluate, distil_loss
 import numpy as np
 from tqdm.auto import tqdm
 import json
-
-
-task_to_keys = {
-    "cola": ("sentence", None),
-    "mnli": ("premise", "hypothesis"),
-    "mrpc": ("sentence1", "sentence2"),
-    "qnli": ("question", "sentence"),
-    "qqp": ("question1", "question2"),
-    "rte": ("sentence1", "sentence2"),
-    "sst2": ("sentence", None),
-    "stsb": ("sentence1", "sentence2"),
-    "wnli": ("sentence1", "sentence2"),
-}
-
-
-def collate_fn(data_points, tok: AutoTokenizer, max_length=128, ds_name='qnli'):  # pair = True
-    k1, k2 = task_to_keys[ds_name]
-    if k2 is not None:
-        tok_out = tok([d[k1] for d in data_points], [d[k2] for d in data_points], return_tensors='pt',
-                    padding=True, max_length=max_length, truncation=True)
-        inp_ids = torch.stack([tok_out['input_ids'], tok_out['input_ids']], dim=0)
-        type_ids = torch.stack([tok_out['token_type_ids'], tok_out['token_type_ids']], dim=0)
-    else:
-        tok_out = tok([d[k1] for d in data_points], return_tensors='pt',padding=True,
-                      max_length=max_length, truncation=True)
-        inp_ids = tok_out['input_ids'][None]
-        type_ids = tok_out['token_type_ids'][None]
-    logits = torch.tensor(np.stack([b['logits'] for b in data_points], axis=0))
-    return {'labels': torch.LongTensor([d['label'] for d in data_points]), 'inp_ids': inp_ids,
-            'att': (inp_ids != tok.pad_token_id).long(), 'logits': logits, 'type_ids': type_ids}
-
-
-def distil_loss(pi_logits: torch.Tensor, p_scores: torch.Tensor):
-    pi_probs = pi_logits.softmax(-1)
-    return -(pi_probs * torch.log_softmax(p_scores, -1)).sum(-1).mean()
-
-
-def evaluate(model, dl, device):
-    model.eval()
-    n_total = 0
-    n_corr = 0
-    for batch in dl:
-        batch = {k: batch[k].to(device) for k in batch}
-        pi_logits = batch['logits']
-        inp_ids = batch['inp_ids']
-        type_ids = batch['type_ids']
-        msk = batch['att'].max(0).values
-        with torch.no_grad():
-            p_logits = model(inp_ids, type_ids, msk)
-        n_total += p_logits.shape[0]
-        n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
-    return n_corr / n_total
 
 
 def main():
@@ -86,15 +34,12 @@ def main():
     np.random.seed(seed)
 
 
-    train_ds = RteDataset(args.ds_name, split='train')
-    val_ds = RteDataset(args.ds_name, split='validation')
     tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
-    train_dl = DataLoader(train_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
-                                                                                           max_length, args.ds_name), shuffle=True)
-    val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
-                                                                                       max_length, args.ds_name), shuffle=False)
-    search_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=lambda b: collate_fn(b, tokenizer,
-                                                                                       max_length, args.ds_name), shuffle=True)
+    train_ds = NliDataset(tokenizer, args.ds_name, ds_config='en', split='train', max_length=max_length)
+    val_ds = NliDataset(tokenizer, args.ds_name, ds_config='en', split='validation', max_length=max_length)
+    train_dl = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, shuffle=True)
+    val_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, shuffle=False)
+    search_dl = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, shuffle=True)
 
     if args.ds_name == 'qnli':
         m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-qnli', cache_dir='.')
@@ -106,7 +51,7 @@ def main():
         raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
-    model = AdaBertStudent(tokenizer.vocab_size, task_to_keys[args.ds_name][-1] is not None,
+    model = AdaBertStudent(tokenizer.vocab_size, train_ds.task_to_keys[args.ds_name][-1] is not None,
                            2, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=None, dropout_p=0.1).to(device)
