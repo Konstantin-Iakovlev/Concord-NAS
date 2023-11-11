@@ -150,6 +150,7 @@ class Cell(nn.Module):
         for depth in range(2, n_nodes + 2):
             nodes.append(Node(f'n{depth}', depth, channels, genotype[depth - 2] if genotype is not None else genotype))
         self.nodes = nn.ModuleList(nodes)
+        self.att_weights = nn.Parameter(torch.randn(n_nodes) * 1e-3)
     
     def forward(self, s0, s1, msk):
         inputs = [self.preprocess[0](s0), self.preprocess[1](s1)]
@@ -157,7 +158,8 @@ class Cell(nn.Module):
             out = node(inputs, msk)
             inputs.append(out)
         out = torch.stack(inputs[2:], dim=0)  # (n_nodes, bs, seq_len, hidden)
-        return out.mean(0)
+        out = (out * self.att_weights.reshape(-1, 1, 1, 1)).sum(0)
+        return out
     
     def export(self):
         return [n.export() for n in self.nodes]

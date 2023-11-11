@@ -20,7 +20,7 @@ def main():
     args = parser.parse_args()
 
     max_length = 128
-    batch_size = 64
+    batch_size = 128
     lr = 1e-3
     clip_value = 1.0
     num_cells = 2
@@ -55,7 +55,7 @@ def main():
                            2, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=None, dropout_p=0.1).to(device)
-    optimizer = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, weight_decay=3e-4)
+    optimizer = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, weight_decay=1e-6)
     optimizer_struct = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' in name], lr=3e-4, weight_decay=1e-3)
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
     criterion = nn.CrossEntropyLoss()

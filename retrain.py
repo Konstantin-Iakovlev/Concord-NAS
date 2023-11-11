@@ -8,6 +8,7 @@ from model import AdaBertStudent, evaluate, distil_loss
 import numpy as np
 from tqdm.auto import tqdm
 import json
+from transformers import get_cosine_schedule_with_warmup
 
 
 def main():
@@ -22,7 +23,7 @@ def main():
         genotype = json.load(f)
 
     max_length = 128
-    batch_size = 64
+    batch_size = 128
     num_cells = 2
     lr = 1e-3
     clip_value = 1.0
@@ -72,7 +73,7 @@ def main():
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=3e-4)
-    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs * len(train_dl), eta_min=1e-3)
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl))
     criterion = nn.CrossEntropyLoss()
 
     
