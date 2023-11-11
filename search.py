@@ -48,7 +48,8 @@ def main():
     elif args.ds_name == 'sst2':
         m = AutoModel.from_pretrained('gchhablani/bert-base-cased-finetuned-sst2', cache_dir='.')
     else:
-        raise ValueError(f'Unknown dataset {args.ds_name}')
+        m = AutoModel.from_pretrained('bert-base-cased', cache_dir='.')
+        # raise ValueError(f'Unknown dataset {args.ds_name}')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, train_ds.task_to_keys[args.ds_name][-1] is not None,
