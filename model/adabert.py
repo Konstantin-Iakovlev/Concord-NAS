@@ -241,7 +241,6 @@ class AdaBertStudent(nn.Module):
     def set_temperature(self, tau: float):
         for m in self.modules():
             if hasattr(m, 'temperature'):
-                print('set')
                 setattr(m, 'temperature', tau)
 
 
