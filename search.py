@@ -23,7 +23,7 @@ def main():
     batch_size = 128
     lr = 1e-3
     clip_value = 1.0
-    num_cells = 2
+    num_cells = 1
     device = args.device
     epochs = args.epochs
     log_freq = 20
@@ -67,6 +67,7 @@ def main():
     best_arch = model.export()
     for epoch in range(epochs):
         model.train()
+        model.set_temperature(max(0.7 ** epoch, 1e-2))
         for i, batch in enumerate(tqdm(train_dl, desc=f'epoch {epoch + 1}/{epochs}')):
             batch = {k: batch[k].to(device) for k in batch}
             pi_logits = batch['logits']

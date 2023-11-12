@@ -24,7 +24,7 @@ def main():
 
     max_length = 128
     batch_size = 128
-    num_cells = 2
+    num_cells = 1
     lr = 1e-3
     clip_value = 1.0
     device = args.device

@@ -42,10 +42,11 @@ class LayerChoice(nn.Module):
             ops_factory(op, channels) for op in self.op_names
         ])
         self.alpha = nn.Parameter(torch.randn(len(self.op_names)) * 1e-3)
+        self.temperature = 1.0
     
     def forward(self, x: torch.Tensor, msk: torch.Tensor):
         mixed_out = torch.stack([op(x, msk) for op in self.ops], 0)
-        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.3).rsample().reshape(-1, 1, 1, 1)
+        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
         # weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
         out = (weights * mixed_out).sum(0)
         return out
@@ -90,11 +91,16 @@ class InputSwitch(nn.Module):
             self.alpha = nn.Parameter(torch.randn(n_cand) * 1e-3)
         else:
             self.register_buffer('alpha', torch.zeros(n_cand))
+        self.genotype = genotype
+        self.temperature = 1.0
     
     def forward(self, inputs: torch.Tensor):
         """inputs: (n_cand, bs, seq_len, hidden)"""
-        # weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
-        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=0.3).rsample().reshape(-1, 1, 1, 1)
+        if self.genotype is None:
+            weights = RelaxedOneHotCategorical(logits=self.alpha,
+                                               temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
+        else:
+            weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
         return (inputs * weights).sum(0)
     
     def export(self):
@@ -231,6 +237,12 @@ class AdaBertStudent(nn.Module):
     
     def export(self):
         return self.cells[0].export()
+    
+    def set_temperature(self, tau: float):
+        for m in self.modules():
+            if hasattr(m, 'temperature'):
+                print('set')
+                setattr(m, 'temperature', tau)
 
 
 def test_bert():
