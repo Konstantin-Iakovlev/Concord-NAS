@@ -24,7 +24,7 @@ def main():
 
     max_length = 128
     batch_size = 128
-    num_cells = 1
+    num_cells = 2
     lr = 1e-3
     clip_value = 1.0
     device = args.device
@@ -69,7 +69,7 @@ def main():
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
     model = AdaBertStudent(tokenizer.vocab_size, train_ds.task_to_keys[args.ds_name][-1] is not None,
-                           2, pretrained_token_embeddigns,
+                           3, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)

@@ -36,7 +36,7 @@ class LayerChoice(nn.Module):
     def __init__(self, channels, label='none') -> None:
         super().__init__()
         self.op_names = ('maxpool', 'avgpool', 'skipconnect', 'conv3x3', 'conv5x5',
-                         'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7', 'zero')
+                         'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7')#, 'zero')
         self.label = label
         self.ops = nn.ModuleList([
             ops_factory(op, channels) for op in self.op_names
@@ -214,6 +214,7 @@ class AdaBertStudent(nn.Module):
         
         self.mlp = nn.Sequential(nn.Tanh(), nn.Dropout(dropout_p), nn.Linear(emb_size, num_classes))
         self.is_pair_task = is_pair_task
+        self.emb_dropout = nn.Dropout(dropout_p)
     
     def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
         """Pefrorms a forward pass
@@ -225,6 +226,7 @@ class AdaBertStudent(nn.Module):
         """
         pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
         x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
+        x = self.emb_dropout(x)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
         else:
