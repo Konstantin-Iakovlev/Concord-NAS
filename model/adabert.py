@@ -117,6 +117,7 @@ class Node(nn.Module):
     def __init__(self, node_id, num_prev_nodes, channels, num_domains, genotype=None) -> None:
         """genotype: [(op, prev_node_idx)] for each domain"""
         super().__init__()
+        print('Node', genotype)
         self.edges = nn.ModuleDict([])
         for i in range(num_prev_nodes):
             if genotype is None:
@@ -131,6 +132,7 @@ class Node(nn.Module):
                             else:
                                 op_to_domains[o].append(d)
 
+                print(op_to_domains)
                 self.edges.update({f'{i}': OneHotLayerChoice(channels, op_to_domains, num_domains, f'{node_id}_p{i}')})
         self.input_switch = InputSwitch(num_prev_nodes if genotype is None else 2, 2, num_domains,
                                         f'{node_id}_switch', genotype)
@@ -165,7 +167,8 @@ class Cell(nn.Module):
         self.preprocess = nn.ModuleList([nn.Sequential(nn.LayerNorm(channels), nn.Dropout(dropout)) for _ in range(2)])
         nodes = []
         for depth in range(2, n_nodes + 2):
-            nodes.append(Node(f'n{depth}', depth, channels, num_domains, genotype[depth - 2] if genotype is not None else genotype))
+            nodes.append(Node(f'n{depth}', depth, channels, num_domains, [gen[depth - 2] for gen in genotype] \
+                              if genotype is not None else genotype))
         self.nodes = nn.ModuleList(nodes)
         self.att_weights = nn.Parameter(torch.randn(n_nodes) * 1e-3)
     
@@ -293,7 +296,7 @@ def evaluate(model, dl, device):
         type_ids = batch['type_ids']
         msk = batch['att'].max(0).values
         with torch.no_grad():
-            p_logits = model(inp_ids, type_ids, msk)
+            p_logits = model(inp_ids, type_ids, msk, 0)
         n_total += p_logits.shape[0]
         n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
     return n_corr / n_total
