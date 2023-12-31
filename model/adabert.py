@@ -33,7 +33,7 @@ def ops_factory(op_name: str, channels: int):
 
 
 class LayerChoice(nn.Module):
-    def __init__(self, channels, label='none') -> None:
+    def __init__(self, channels, num_domains, label='none') -> None:
         super().__init__()
         self.op_names = ('maxpool', 'avgpool', 'skipconnect', 'conv3x3', 'conv5x5',
                          'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7')#, 'zero')
@@ -41,28 +41,34 @@ class LayerChoice(nn.Module):
         self.ops = nn.ModuleList([
             ops_factory(op, channels) for op in self.op_names
         ])
-        self.alpha = nn.Parameter(torch.randn(len(self.op_names)) * 1e-3)
+        self.alpha = nn.Parameter(torch.randn(num_domains, len(self.op_names)) * 1e-3)
         self.temperature = 1.0
     
-    def forward(self, x: torch.Tensor, msk: torch.Tensor):
+    def forward(self, x: torch.Tensor, msk: torch.Tensor, domain_idx) -> torch.Tensor:
         mixed_out = torch.stack([op(x, msk) for op in self.ops], 0)
-        weights = RelaxedOneHotCategorical(logits=self.alpha, temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
+        weights = RelaxedOneHotCategorical(logits=self.alpha[domain_idx],
+                                           temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
         # weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
         out = (weights * mixed_out).sum(0)
         return out
     
-    def export(self):
-        return self.op_names[self.alpha.argmax(-1).item()]
+    def export(self, domain_idx: int):
+        return self.op_names[self.alpha[domain_idx].argmax(-1).item()]
 
 
 class OneHotLayerChoice(nn.Module):
-    def __init__(self, channels, op_name, label='none') -> None:
+    def __init__(self, channels, op_names_to_domains, num_domains, label='none') -> None:
+        """op_names_to_domains: {op_name: [d1, d2, ...]}"""
         super().__init__()
         self.label = label
-        self.op = ops_factory(op_name, channels)
+        self.ops = nn.ModuleList([ops_factory(op_name, channels) for op_name in op_names_to_domains])
+        self.domain_to_op = [0] * num_domains
+        for i, domains in enumerate(op_names_to_domains.values()):
+            for d in domains:
+                self.domain_to_op[d] = i
     
-    def forward(self, x: torch.Tensor, msk: torch.Tensor):
-        return self.op(x, msk)
+    def forward(self, x: torch.Tensor, msk: torch.Tensor, domain_idx: int) -> torch.Tensor:
+        return self.ops[self.domain_to_op[domain_idx]](x, msk)
 
 
 def test_lc():
@@ -82,57 +88,64 @@ def test_oh_lc():
 
 
 class InputSwitch(nn.Module):
-    def __init__(self, n_cand, n_chosen, label='none', genotype=None) -> None:
+    def __init__(self, n_cand, n_chosen, num_domains, label='none', genotype=None) -> None:
         super().__init__()
         self.n_chosen = n_chosen
         self.label = label
         self.n_cand = n_cand
         if genotype is None:
-            self.alpha = nn.Parameter(torch.randn(n_cand) * 1e-3)
+            self.alpha = nn.Parameter(torch.randn(num_domains, n_cand) * 1e-3)
         else:
-            self.register_buffer('alpha', torch.zeros(n_cand))
+            self.register_buffer('alpha', torch.zeros(num_domains, n_cand))
         self.genotype = genotype
         self.temperature = 1.0
     
-    def forward(self, inputs: torch.Tensor):
+    def forward(self, inputs: torch.Tensor, domain_idx: int) -> torch.Tensor:
         """inputs: (n_cand, bs, seq_len, hidden)"""
         if self.genotype is None:
-            weights = RelaxedOneHotCategorical(logits=self.alpha,
+            weights = RelaxedOneHotCategorical(logits=self.alpha[domain_idx],
                                                temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
         else:
-            weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
+            weights = self.alpha[domain_idx].softmax(-1).reshape(-1, 1, 1, 1)
         return (inputs * weights).sum(0)
     
-    def export(self):
-        return np.argsort(self.alpha.detach().cpu().numpy())[-2:].tolist()
+    def export(self, domain_idx: int):
+        return np.argsort(self.alpha[domain_idx].detach().cpu().numpy())[-2:].tolist()
 
 
 class Node(nn.Module):
-    def __init__(self, node_id, num_prev_nodes, channels, genotype=None) -> None:
-        """genotype: [(op, prev_node_idx)]"""
+    def __init__(self, node_id, num_prev_nodes, channels, num_domains, genotype=None) -> None:
+        """genotype: [(op, prev_node_idx)] for each domain"""
         super().__init__()
         self.edges = nn.ModuleDict([])
         for i in range(num_prev_nodes):
             if genotype is None:
-                self.edges.update({f'{i}': LayerChoice(channels, f'{node_id}_p{i}')})
-            elif i in [e[1] for e in genotype]:
-                op_name = None
-                for o, j in genotype:
-                    if j == i:
-                        op_name = o
-                self.edges.update({f'{i}': OneHotLayerChoice(channels, op_name, f'{node_id}_p{i}')})
-        self.input_switch = InputSwitch(len(self.edges), 2, f'{node_id}_switch', genotype)
+                self.edges.update({f'{i}': LayerChoice(channels, num_domains, f'{node_id}_p{i}')})
+            elif i in [e[1] for gen in genotype for e in gen]:
+                op_to_domains = {}
+                for d, gen in enumerate(genotype):
+                    for o, j in gen:
+                        if j == i:
+                            if o not in op_to_domains:
+                                op_to_domains[o] = [d]
+                            else:
+                                op_to_domains[o].append(d)
+
+                self.edges.update({f'{i}': OneHotLayerChoice(channels, op_to_domains, num_domains, f'{node_id}_p{i}')})
+        self.input_switch = InputSwitch(num_prev_nodes if genotype is None else 2, 2, num_domains,
+                                        f'{node_id}_switch', genotype)
+        self.num_domains = num_domains
     
-    def forward(self, prev_nodes: torch.Tensor, msk: torch.Tensor):
+    def forward(self, prev_nodes: torch.Tensor, msk: torch.Tensor, domain_idx: int):
         """prev_nodes: List (bs, seq_len, hidden)"""
         res = []
         for key, op in self.edges.items():
-            res.append(op(prev_nodes[int(key)], msk))
-        return self.input_switch(torch.stack(res, 0))
+            res.append(op(prev_nodes[int(key)], msk, domain_idx))
+        return self.input_switch(torch.stack(res, 0), domain_idx)
     
-    def export(self):
-        selected_edges = self.input_switch.export()
-        selected_ops = [self.edges[f'{i}'].export() for i in selected_edges]
+    def export(self, domain_idx):
+        selected_edges = self.input_switch.export(domain_idx)
+        selected_ops = [self.edges[f'{i}'].export(domain_idx) for i in selected_edges]
         return [[op, i] for op, i in zip(selected_ops, selected_edges)]
 
 
@@ -146,27 +159,27 @@ def test_node():
 
 
 class Cell(nn.Module):
-    def __init__(self, n_nodes, channels, dropout, genotype=None) -> None:
+    def __init__(self, n_nodes, channels, dropout, num_domains, genotype=None) -> None:
         """Genotype: list of genotypes for each node"""
         super().__init__()
         self.preprocess = nn.ModuleList([nn.Sequential(nn.LayerNorm(channels), nn.Dropout(dropout)) for _ in range(2)])
         nodes = []
         for depth in range(2, n_nodes + 2):
-            nodes.append(Node(f'n{depth}', depth, channels, genotype[depth - 2] if genotype is not None else genotype))
+            nodes.append(Node(f'n{depth}', depth, channels, num_domains, genotype[depth - 2] if genotype is not None else genotype))
         self.nodes = nn.ModuleList(nodes)
         self.att_weights = nn.Parameter(torch.randn(n_nodes) * 1e-3)
     
-    def forward(self, s0, s1, msk):
+    def forward(self, s0, s1, msk, domain_idx):
         inputs = [self.preprocess[0](s0), self.preprocess[1](s1)]
         for node in self.nodes:
-            out = node(inputs, msk)
+            out = node(inputs, msk, domain_idx)
             inputs.append(out)
         out = torch.stack(inputs[2:], dim=0)  # (n_nodes, bs, seq_len, hidden)
         out = (out * self.att_weights.reshape(-1, 1, 1, 1)).sum(0)
         return out
     
-    def export(self):
-        return [n.export() for n in self.nodes]
+    def export(self, domain_idx: int):
+        return [n.export(domain_idx) for n in self.nodes]
 
 
 def test_cell():
@@ -182,6 +195,7 @@ class AdaBertStudent(nn.Module):
                  vocab_size,
                  is_pair_task,
                  num_classes,
+                 num_domains,
                  pretrained_token_embeddings,
                  pretrained_pos_embeddings,
                  num_interm_nodes = 3,
@@ -200,9 +214,10 @@ class AdaBertStudent(nn.Module):
         self.pos_embeds.weight.requires_grad = False
         self.fact_map = nn.Linear(pretrained_token_embeddings.shape[1], emb_size)
         self.type_embeds = nn.Embedding(2, emb_size)
+        self.num_domains = num_domains
         cells = []
         for i in range(num_cells):
-            cell = Cell(num_interm_nodes, emb_size, dropout_p, genotype)
+            cell = Cell(num_interm_nodes, emb_size, dropout_p, num_domains, genotype)
             if i > 0 and genotype is None:
                 for node, ref_node in zip(cell.nodes, cells[-1].nodes):
                     assert node.edges.keys() == ref_node.edges.keys()
@@ -216,7 +231,7 @@ class AdaBertStudent(nn.Module):
         self.is_pair_task = is_pair_task
         self.emb_dropout = nn.Dropout(dropout_p)
     
-    def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor):
+    def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor, domain_idx: int):
         """Pefrorms a forward pass
 
         :param ids: tensor of shape (sentences, batch_size, seq_len)
@@ -232,13 +247,13 @@ class AdaBertStudent(nn.Module):
         else:
             s0 = s1 = x[0]
         for _, cell in enumerate(self.cells):
-            s0, s1 = s1, cell(s0, s1, msk)
+            s0, s1 = s1, cell(s0, s1, msk, domain_idx)
         out = s1.mean(1)  # (bs, hidden)
         logits = self.mlp(out)
         return logits
     
     def export(self):
-        return self.cells[0].export()
+        return [self.cells[0].export(d) for d in range(self.num_domains)]
     
     def set_temperature(self, tau: float):
         for m in self.modules():
