@@ -49,7 +49,7 @@ def main():
     model = AdaBertStudent(tokenizer.vocab_size, train_ds.task_to_keys[ds_name][-1] is not None,
                            3, num_domains, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
-                           genotype=None, dropout_p=0.1).to(device)
+                           genotype=None, dropout_p=0.05).to(device)
     optimizer = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, weight_decay=1e-6)
     optimizer_struct = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' in name], lr=3e-4, weight_decay=1e-3)
     criterion = nn.CrossEntropyLoss()
