@@ -1,1 +1,1 @@
-[[[["zero", 1], ["conv3x3", 0]], [["maxpool", 1], ["zero", 2]], [["avgpool", 0], ["conv5x5", 2]]]]
+[[[["conv3x3", 1], ["conv5x5", 0]], [["maxpool", 0], ["avgpool", 1]], [["avgpool", 0], ["conv5x5", 2]]]]
