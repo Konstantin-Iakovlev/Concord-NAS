@@ -12,7 +12,7 @@ def main():
     args = parser.parse_args()
 
     op_names = ('maxpool', 'avgpool', 'skipconnect', 'conv3x3', 'conv5x5', 
-                'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7', 'zero')
+                'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7')#, 'zero')
     np.random.seed(args.seed)
     final_arch = []
     for _ in range(args.n_domains):

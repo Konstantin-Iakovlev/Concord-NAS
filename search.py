@@ -71,7 +71,7 @@ def main():
 
             # weights update
             optimizer.zero_grad()
-            loss = 1.0 * criterion(p_logits, batch['labels'])# + 0.8 * distil_loss(pi_logits, p_logits)
+            loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
             torch.nn.utils.clip_grad_norm_([p for name, p in model.named_parameters() if 'alpha' not in name], clip_value)
             optimizer.step()
@@ -85,7 +85,7 @@ def main():
                 msk = val_batch['att'].max(0).values
                 p_logits = model(inp_ids, type_ids, msk, domain_idx)
                 optimizer_struct.zero_grad()
-                loss = 1.0 * criterion(p_logits, val_batch['labels'])# + 0.8 * distil_loss(pi_logits, p_logits)
+                loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
                 loss.backward()
                 optimizer_struct.step()
                 break

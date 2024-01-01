@@ -68,7 +68,7 @@ def main():
             domain_idx = 0
             p_logits = model(inp_ids, type_ids, msk, domain_idx)
             optimizer.zero_grad()
-            loss = 1.0 * criterion(p_logits, batch['labels'])# + 0.8 * distil_loss(pi_logits, p_logits)
+            loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
             optimizer.step()

@@ -25,19 +25,19 @@ class NliDataset(Dataset):
         self.task_to_keys["paws-x"] = ("sentence1", "sentence2")
         self.task_to_keys["xnli"] = ("premise", "hypothesis")
         if ds_name in self.glue_datasets:
-            self.raw_ds = load_dataset("glue", ds_name)[split]
+            self.raw_ds = load_dataset("glue", ds_name, data_dir='.')[split]
             self.distil_logits = np.load(f'analysis/{ds_name}_logits_{split}.npy')
         else:
-            self.raw_ds = load_dataset(ds_name, ds_config)[split]
-            # self.distil_logits = np.load(f'analysis/{ds_name}_{ds_config}_logits_{split}.npy')
-        # assert len(self.raw_ds) == self.distil_logits.shape[0]
+            self.raw_ds = load_dataset(ds_name, ds_config, data_dir='.')[split]
+            self.distil_logits = np.load(f'analysis/{ds_name}_{ds_config}_logits_{split}.npy')
+        assert len(self.raw_ds) == self.distil_logits.shape[0]
         self.max_length = max_length
         self.tok = tokenizer
         self.ds_name = ds_name
     
     def __getitem__(self, index):
         dp = self.raw_ds[index]
-        dp['logits'] = np.zeros(3, dtype=np.float32) #self.distil_logits[index]
+        dp['logits'] = self.distil_logits[index]
         return dp
 
     def __len__(self):

@@ -1,1 +1,1 @@
-[[["conv7x7", 1], ["maxpool", 0]], [["conv7x7", 0], ["skipconnect", 2]], [["dilconv7x7", 1], ["avgpool", 3]]]
+[[[["conv7x7", 1], ["maxpool", 0]], [["conv7x7", 0], ["skipconnect", 2]], [["dilconv7x7", 1], ["avgpool", 3]]]]
