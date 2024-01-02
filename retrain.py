@@ -52,7 +52,7 @@ def main():
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.05).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
-    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl[0]))
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl[0]) * len(ds_configs))
     criterion = nn.CrossEntropyLoss()
     
     total_steps = 0

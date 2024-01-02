@@ -91,7 +91,7 @@ def main():
                     break
 
                 total_steps += 1
-                temp = max(1e-3, 0.01 ** (total_steps / len(train_dl[0])))
+                temp = max(1e-3, 0.01 ** (total_steps / len(train_dl[0]) / len(ds_configs)))
                 model.set_temperature(temp)
                 if i % log_freq == 0 and i > 0:
                     print('Train acc', round((pi_logits.argmax(-1) == p_logits.argmax(-1)).float().mean().item(), 4))
