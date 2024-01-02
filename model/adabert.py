@@ -102,11 +102,7 @@ class InputSwitch(nn.Module):
     
     def forward(self, inputs: torch.Tensor, domain_idx: int) -> torch.Tensor:
         """inputs: (n_cand, bs, seq_len, hidden)"""
-        if self.genotype is None:
-            weights = RelaxedOneHotCategorical(logits=self.alpha[domain_idx],
-                                               temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
-        else:
-            weights = self.alpha[domain_idx].softmax(-1).reshape(-1, 1, 1, 1)
+        weights = self.alpha[domain_idx].softmax(-1).reshape(-1, 1, 1, 1)
         return (inputs * weights).sum(0)
     
     def export(self, domain_idx: int):
