@@ -62,7 +62,7 @@ class OneHotLayerChoice(nn.Module):
         super().__init__()
         self.label = label
         self.ops = nn.ModuleList([ops_factory(op_name, channels) for op_name in op_names_to_domains])
-        self.domain_to_op = [0] * num_domains
+        self.domain_to_op = [-100] * num_domains
         for i, domains in enumerate(op_names_to_domains.values()):
             for d in domains:
                 self.domain_to_op[d] = i
@@ -138,7 +138,8 @@ class Node(nn.Module):
         """prev_nodes: List (bs, seq_len, hidden)"""
         res = []
         for key, op in self.edges.items():
-            res.append(op(prev_nodes[int(key)], msk, domain_idx))
+            if not hasattr(op, 'domain_to_op') or op.domain_to_op[domain_idx] != -100:
+                res.append(op(prev_nodes[int(key)], msk, domain_idx))
         return self.input_switch(torch.stack(res, 0), domain_idx)
     
     def export(self, domain_idx):
@@ -281,18 +282,21 @@ def distil_loss(pi_logits: torch.Tensor, p_scores: torch.Tensor):
     return -(pi_probs * torch.log_softmax(p_scores, -1)).sum(-1).mean()
 
 
-def evaluate(model, dl, device):
+def evaluate(model, dls, device):
     model.eval()
-    n_total = 0
-    n_corr = 0
-    for batch in dl:
-        batch = {k: batch[k].to(device) for k in batch}
-        pi_logits = batch['logits']
-        inp_ids = batch['inp_ids']
-        type_ids = batch['type_ids']
-        msk = batch['att'].max(0).values
-        with torch.no_grad():
-            p_logits = model(inp_ids, type_ids, msk, 0)
-        n_total += p_logits.shape[0]
-        n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
-    return n_corr / n_total
+    acc_arr = []
+    for domain_idx, dl in enumerate(dls):
+        n_total = 0
+        n_corr = 0
+        for batch in dl:
+            batch = {k: batch[k].to(device) for k in batch}
+            pi_logits = batch['logits']
+            inp_ids = batch['inp_ids']
+            type_ids = batch['type_ids']
+            msk = batch['att'].max(0).values
+            with torch.no_grad():
+                p_logits = model(inp_ids, type_ids, msk, domain_idx)
+            n_total += p_logits.shape[0]
+            n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
+        acc_arr.append(n_corr / n_total)
+    return acc_arr
