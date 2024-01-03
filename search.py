@@ -11,12 +11,27 @@ from tqdm.auto import tqdm
 import json
 
 
+def struct_regul(model: AdaBertStudent, eps=1e-3):
+    reg = 0.0
+    for node in model.cells[0].nodes:
+        # decode using the edge norm params
+        soft_beta = node.input_switch.alpha.softmax(-1)
+        ids = torch.topk(soft_beta, 2, dim=-1).indices
+        hard_beta = torch.scatter(torch.zeros_like(soft_beta), -1, ids, 1.0)
+        hard_beta = torch.where(hard_beta == 0, eps, 1)
+        beta_hat = soft_beta * hard_beta + (hard_beta - soft_beta * hard_beta).detach()
+        for prev_idx_str, edge in node.edges.items():
+            reg += torch.prod(edge.alpha.softmax(-1), dim=0).sum() * torch.prod(beta_hat[:, int(prev_idx_str)])
+    return reg
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument('--epochs', required=False, type=int, default=20)
     parser.add_argument('--valid_freq', required=False, type=int, default=200)
     parser.add_argument('--device', required=False, type=str, default='cuda')
     parser.add_argument('--ds_name', required=False, type=str, default='xnli;en')
+    parser.add_argument('--lambda_reg', required=False, type=float, default=0.0)
     args = parser.parse_args()
 
     max_length = 128
@@ -86,6 +101,7 @@ def main():
                     p_logits = model(inp_ids, type_ids, msk, domain_idx)
                     optimizer_struct.zero_grad()
                     loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
+                    loss += args.lambda_reg * struct_regul(model)
                     loss.backward()
                     optimizer_struct.step()
                     break
