@@ -24,7 +24,7 @@ def main():
 
     max_length = 128
     batch_size = 128
-    num_cells = 2
+    num_cells = 1
     lr = 1e-3
     clip_value = 1.0
     device = args.device
@@ -51,6 +51,7 @@ def main():
                            3, num_domains, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.05).to(device)
+    print(sum([p.numel() for p in model.parameters()]) // 1000 / 1000, 'M')
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
     lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl[0]) * len(ds_configs))
     criterion = nn.CrossEntropyLoss()

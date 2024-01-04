@@ -1,4 +1,3 @@
-
 import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -11,7 +10,7 @@ from tqdm.auto import tqdm
 import json
 
 
-def struct_regul(model: AdaBertStudent, eps=1e-3):
+def struct_regul(model: AdaBertStudent, eps=1e-1):
     reg = 0.0
     for node in model.cells[0].nodes:
         # decode using the edge norm params
@@ -36,7 +35,7 @@ def main():
 
     max_length = 128
     batch_size = 128
-    lr = 5e-5
+    lr = 1e-3
     clip_value = 1.0
     num_cells = 1
     device = args.device
