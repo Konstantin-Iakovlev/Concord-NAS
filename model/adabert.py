@@ -206,13 +206,12 @@ class AdaBertStudent(nn.Module):
                  ) -> None:
         """genotype: List[List[(op, id)]]"""
         super().__init__()
+        pretrained_token_embeddings @= torch.pca_lowrank(pretrained_token_embeddings, emb_size)[-1]
+        pretrained_pos_embeddings @= torch.pca_lowrank(pretrained_pos_embeddings, emb_size)[-1]
         self.token_embeds = nn.Embedding(vocab_size, pretrained_token_embeddings.shape[1])
-        self.token_embeds.weight = pretrained_token_embeddings
-        self.token_embeds.requires_grad = False # freeze pretrained embeddings
+        self.token_embeds.weight.data = pretrained_token_embeddings
         self.pos_embeds = nn.Embedding(pretrained_pos_embeddings.shape[0], pretrained_pos_embeddings.shape[1])
-        self.pos_embeds.weight = pretrained_pos_embeddings
-        self.pos_embeds.weight.requires_grad = False
-        self.fact_map = nn.Linear(pretrained_token_embeddings.shape[1], emb_size)
+        self.pos_embeds.weight.data = pretrained_pos_embeddings
         self.type_embeds = nn.Embedding(2, emb_size)
         self.num_domains = num_domains
         cells = []
@@ -240,7 +239,7 @@ class AdaBertStudent(nn.Module):
         :return: tensor of shape (bs)
         """
         pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
-        x = self.fact_map(self.token_embeds(ids) + self.pos_embeds(pos_ids)) + self.type_embeds(type_ids)
+        x = self.token_embeds(ids) + self.pos_embeds(pos_ids) + self.type_embeds(type_ids)
         x = self.emb_dropout(x)
         if self.is_pair_task:
             s0, s1 = x[0], x[1]
