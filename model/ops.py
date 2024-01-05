@@ -9,7 +9,7 @@ class Pool(nn.Module):
         else:
             self.pool = nn.MaxPool1d(kernel_size=kernel_size, padding=padding, stride=1)
     
-    def forward(self, x: torch.Tensor, mask: torch.Tensor):
+    def forward(self, x: torch.Tensor, mask: torch.Tensor, domain_idx: int):
         """
         :param x: tensor of shape (bs, seq_len, hidden)
         :param mask: tensor of shape (bs, seq_len)
@@ -20,14 +20,14 @@ class Pool(nn.Module):
 
 
 class ConvBN(nn.Module):
-    def __init__(self, channels, kernel_size, dilation=False) -> None:
+    def __init__(self, num_domains, channels, kernel_size, dilation=False) -> None:
         super().__init__()
         padding = ((2 if dilation else 1) * (kernel_size - 1)) // 2
         self.conv = nn.Conv1d(channels, channels, kernel_size, 1, padding, 2 if dilation else 1, bias=False)
         # self.bn = nn.LayerNorm(channels)
-        self.bn = nn.BatchNorm1d(channels)
+        self.bn = nn.ModuleList([nn.BatchNorm1d(channels) for _ in range(num_domains)])
     
-    def forward(self, x: torch.Tensor, mask: torch.Tensor):
+    def forward(self, x: torch.Tensor, mask: torch.Tensor, domain_idx: int):
         """
         :param x: tensor of shape (bs, seq_len, hidden)
         :param mask: tensor of shape (bs, seq_len)
@@ -35,7 +35,7 @@ class ConvBN(nn.Module):
         out = torch.relu(x)
         att_mask = mask[..., None]
         out = out * att_mask
-        out = self.bn(self.conv(out.transpose(1, 2))).transpose(1, 2)
+        out = self.bn[domain_idx](self.conv(out.transpose(1, 2))).transpose(1, 2)
         # out = self.bn(out)
         return out
 
@@ -43,7 +43,7 @@ class Identity(nn.Module):
     def __init__(self) -> None:
         super().__init__()
     
-    def forward(self, x, msk):
+    def forward(self, x, msk, domain_idx):
         return x
 
 
@@ -51,7 +51,7 @@ class Zero(nn.Module):
     def __init__(self) -> None:
         super().__init__()
     
-    def forward(self, x, msk):
+    def forward(self, x, msk, domain_idx):
         return torch.zeros_like(x)
 
 

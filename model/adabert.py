@@ -7,7 +7,7 @@ import numpy as np
 # TODO: attention maks conflict when using is_pair = True
 
 
-def ops_factory(op_name: str, channels: int):
+def ops_factory(op_name: str, channels: int, num_domains: int):
     if op_name == 'maxpool':
         return Pool('max', 3, 1)
     elif op_name == 'avgpool':
@@ -15,17 +15,17 @@ def ops_factory(op_name: str, channels: int):
     elif op_name == 'skipconnect':
         return Identity()
     elif op_name == 'conv3x3':
-        return ConvBN(channels, 3)
+        return ConvBN(num_domains, channels, 3)
     elif op_name == 'conv5x5':
-        return ConvBN(channels, 5)
+        return ConvBN(num_domains, channels, 5)
     elif op_name == 'conv7x7':
-        return ConvBN(channels, 7)
+        return ConvBN(num_domains, channels, 7)
     elif op_name == 'dilconv3x3':
-        return ConvBN(channels, 3, dilation=True)
+        return ConvBN(num_domains, channels, 3, dilation=True)
     elif op_name == 'dilconv5x5':
-        return ConvBN(channels, 5, dilation=True)
+        return ConvBN(num_domains, channels, 5, dilation=True)
     elif op_name == 'dilconv7x7':
-        return ConvBN(channels, 7, dilation=True)
+        return ConvBN(num_domains, channels, 7, dilation=True)
     elif op_name == 'zero':
         return Zero()
     else:
@@ -39,13 +39,13 @@ class LayerChoice(nn.Module):
                          'conv7x7', 'dilconv3x3', 'dilconv5x5', 'dilconv7x7')#, 'zero')
         self.label = label
         self.ops = nn.ModuleList([
-            ops_factory(op, channels) for op in self.op_names
+            ops_factory(op, channels, num_domains) for op in self.op_names
         ])
         self.alpha = nn.Parameter(torch.randn(num_domains, len(self.op_names)) * 1e-3)
         self.temperature = 1.0
     
     def forward(self, x: torch.Tensor, msk: torch.Tensor, domain_idx) -> torch.Tensor:
-        mixed_out = torch.stack([op(x, msk) for op in self.ops], 0)
+        mixed_out = torch.stack([op(x, msk, domain_idx) for op in self.ops], 0)
         weights = RelaxedOneHotCategorical(logits=self.alpha[domain_idx],
                                            temperature=self.temperature).rsample().reshape(-1, 1, 1, 1)
         # weights = self.alpha.softmax(-1).reshape(-1, 1, 1, 1)
@@ -61,14 +61,14 @@ class OneHotLayerChoice(nn.Module):
         """op_names_to_domains: {op_name: [d1, d2, ...]}"""
         super().__init__()
         self.label = label
-        self.ops = nn.ModuleList([ops_factory(op_name, channels) for op_name in op_names_to_domains])
+        self.ops = nn.ModuleList([ops_factory(op_name, channels, num_domains) for op_name in op_names_to_domains])
         self.domain_to_op = [-100] * num_domains
         for i, domains in enumerate(op_names_to_domains.values()):
             for d in domains:
                 self.domain_to_op[d] = i
     
     def forward(self, x: torch.Tensor, msk: torch.Tensor, domain_idx: int) -> torch.Tensor:
-        return self.ops[self.domain_to_op[domain_idx]](x, msk)
+        return self.ops[self.domain_to_op[domain_idx]](x, msk, domain_idx)
 
 
 def test_lc():
