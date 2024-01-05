@@ -123,7 +123,7 @@ def main():
 
     print('Finished with', round(max(val_accs), 4))
     print('Final architecture', best_arch)
-    with open('final_arch.json', 'w') as f:
+    with open(f'final_arch_{seed}.json', 'w') as f:
         f.write(json.dumps(best_arch))
 
 
