@@ -31,11 +31,12 @@ def main():
     parser.add_argument('--device', required=False, type=str, default='cuda')
     parser.add_argument('--ds_name', required=False, type=str, default='xnli;en')
     parser.add_argument('--lambda_reg', required=False, type=float, default=0.0)
+    parser.add_argument('--curr_steps', required=False, type=int, default=3000)
     args = parser.parse_args()
 
     max_length = 128
     batch_size = 128
-    lr = 1e-3
+    lr = 1e-4
     clip_value = 1.0
     num_cells = 1
     device = args.device
@@ -81,7 +82,7 @@ def main():
                 inp_ids = batch['inp_ids']
                 type_ids = batch['type_ids']
                 msk = batch['att'].max(0).values
-                p_logits = model(inp_ids, type_ids, msk, domain_idx)
+                p_logits = model(inp_ids, type_ids, msk, domain_idx if total_steps >= args.curr_steps else 0)
 
                 # weights update
                 optimizer.zero_grad()
@@ -97,7 +98,7 @@ def main():
                     inp_ids = val_batch['inp_ids']
                     type_ids = val_batch['type_ids']
                     msk = val_batch['att'].max(0).values
-                    p_logits = model(inp_ids, type_ids, msk, domain_idx)
+                    p_logits = model(inp_ids, type_ids, msk, domain_idx if total_steps >= args.curr_steps else 0)
                     optimizer_struct.zero_grad()
                     loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
                     loss += args.lambda_reg * struct_regul(model)
@@ -106,6 +107,13 @@ def main():
                     break
 
                 total_steps += 1
+                if total_steps <= args.curr_steps:
+                    for cell in model.cells:
+                        for node in cell.nodes:
+                            for edge in node.edges.values():
+                                edge.alpha.data[1:] = edge.alpha.data[0][None]
+                            node.input_switch.alpha.data[1:] = node.input_switch.alpha.data[0][None]
+
                 temp = max(1e-3, 0.01 ** (total_steps / len(train_dl[0]) / len(ds_configs)))
                 model.set_temperature(temp)
                 if i % log_freq == 0 and i > 0:
@@ -113,7 +121,7 @@ def main():
                     print(model.export())
             
                 if total_steps % valid_freq == 0:
-                    val_acc_arr = evaluate(model, val_dl, device)
+                    val_acc_arr = evaluate(model, val_dl, device, total_steps < args.curr_steps)
                     model.train()
                     val_accs.append(np.mean(val_acc_arr))
                     if np.mean(val_acc_arr) >= max(val_accs):

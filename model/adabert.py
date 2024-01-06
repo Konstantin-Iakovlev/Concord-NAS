@@ -281,7 +281,7 @@ def distil_loss(pi_logits: torch.Tensor, p_scores: torch.Tensor):
     return -(pi_probs * torch.log_softmax(p_scores, -1)).sum(-1).mean()
 
 
-def evaluate(model, dls, device):
+def evaluate(model, dls, device, curriculum=False):
     model.eval()
     acc_arr = []
     for domain_idx, dl in enumerate(dls):
@@ -294,7 +294,7 @@ def evaluate(model, dls, device):
             type_ids = batch['type_ids']
             msk = batch['att'].max(0).values
             with torch.no_grad():
-                p_logits = model(inp_ids, type_ids, msk, domain_idx)
+                p_logits = model(inp_ids, type_ids, msk, domain_idx if not curriculum else 0)
             n_total += p_logits.shape[0]
             n_corr += (pi_logits.argmax(-1) == p_logits.argmax(-1)).sum().item()
         acc_arr.append(n_corr / n_total)
