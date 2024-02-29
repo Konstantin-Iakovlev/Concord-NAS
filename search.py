@@ -27,6 +27,7 @@ def struct_regul(model: AdaBertStudent, eps=1e-1):
 def main():
     parser = ArgumentParser()
     parser.add_argument('--epochs', required=False, type=int, default=20)
+    parser.add_argument('--seed', required=False, type=int, default=0)
     parser.add_argument('--valid_freq', required=False, type=int, default=200)
     parser.add_argument('--device', required=False, type=str, default='cuda')
     parser.add_argument('--ds_name', required=False, type=str, default='xnli;en')
@@ -43,7 +44,7 @@ def main():
     epochs = args.epochs
     log_freq = 20
     valid_freq = args.valid_freq
-    seed = 2
+    seed = args.seed
 
     torch.manual_seed(seed)
     np.random.seed(seed)
