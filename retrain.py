@@ -4,7 +4,7 @@ import torch.nn as nn
 from argparse import ArgumentParser
 from dataset import NliDataset
 from transformers import AutoTokenizer, AutoModel
-from model import AdaBertStudent, evaluate, distil_loss
+from model import AdaBertStudent, AdaBertStudentMLM, evaluate, distil_loss
 import numpy as np
 from tqdm.auto import tqdm
 import json
@@ -15,6 +15,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--arch_path', required=True)
     parser.add_argument('--epochs', required=False, type=int, default=20)
+    parser.add_argument('--pretrain_steps', required=False, type=int, default=10_000)
     parser.add_argument('--seed', required=False, type=int, default=0)
     parser.add_argument('--valid_freq', required=False, type=int, default=200)
     parser.add_argument('--device', required=False, type=str, default='cuda')
@@ -48,10 +49,61 @@ def main():
     m = AutoModel.from_pretrained('bert-base-multilingual-cased', cache_dir='.')
     pretrained_token_embeddigns = m.embeddings.word_embeddings.weight
     pretrained_pos_embeddigns = m.embeddings.position_embeddings.weight
+    
+    ### Pretrain ###
+    model = AdaBertStudentMLM(tokenizer.vocab_size, False,
+                        len(tokenizer), num_domains, pretrained_token_embeddigns,
+                        pretrained_pos_embeddigns, num_cells=num_cells,
+                        genotype=genotype, dropout_p=0.05).to(device)
+    print(sum([p.numel() for p in model.parameters()]) // 1000 / 1000, 'M')
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, args.pretrain_steps)
+    criterion = nn.CrossEntropyLoss()
+
+    total_steps = 0
+    val_accs = []
+    losses = []
+    model.train()
+    for epoch in range(10):
+        if total_steps >= args.pretrain_steps:
+            break
+        for i, batches in enumerate(tqdm(zip(*train_dl), desc=f'epoch {epoch + 1}/{epochs}', total=len(train_dl[0]))):
+            for domain_idx, batch in enumerate(batches):
+                batch = {k: batch[k].to(device) for k in batch}
+                inp_ids = batch['inp_ids']
+                inp_ids_orig = inp_ids.clone()
+                # add mask tokens to premise
+                is_mask = (torch.rand_like(inp_ids[0].float()) < 0.15)
+                inp_ids[0] = torch.where(is_mask, tokenizer.mask_token_id, inp_ids[0])
+                type_ids = batch['type_ids']
+                msk = batch['att'].max(0).values
+
+                out = model(inp_ids, type_ids, msk, domain_idx)
+
+                logits = model.lm_head(out.reshape(-1, out.shape[-1])[is_mask.reshape(-1)])
+                labels = inp_ids_orig[0].reshape(-1)[is_mask.reshape(-1)]
+                optimizer.zero_grad()
+
+                loss = criterion(logits, labels)
+
+                losses.append(loss.item())
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
+                optimizer.step()
+                lr_scheduler.step()
+
+                total_steps += 1
+            if total_steps >= args.pretrain_steps:
+                break
+    print('Finished pretrain', losses[0], losses[-1])
+    torch.save(f=f'pretrain_{seed}.ckpt', obj=model.state_dict())
+
     model = AdaBertStudent(tokenizer.vocab_size, train_ds[0].task_to_keys[ds_name][-1] is not None,
                            3, num_domains, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=genotype, dropout_p=0.05).to(device)
+    model.load_state_dict(torch.load(f'pretrain_{seed}.ckpt', map_location='cpu'), strict=False)
     print(sum([p.numel() for p in model.parameters()]) // 1000 / 1000, 'M')
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
     lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl[0]) * len(ds_configs))

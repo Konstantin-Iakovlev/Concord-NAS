@@ -260,6 +260,70 @@ class AdaBertStudent(nn.Module):
                 setattr(m, 'temperature', tau)
 
 
+class AdaBertStudentMLM(nn.Module):
+    def __init__(self,
+                 vocab_size,
+                 is_pair_task,
+                 num_classes,
+                 num_domains,
+                 pretrained_token_embeddings,
+                 pretrained_pos_embeddings,
+                 num_interm_nodes = 3,
+                 num_cells = 8,
+                 emb_size = 128,
+                 dropout_p = 0.1,
+                 genotype = None,
+                 ) -> None:
+        """genotype: List[List[(op, id)]]"""
+        super().__init__()
+        pretrained_token_embeddings @= torch.pca_lowrank(pretrained_token_embeddings, emb_size)[-1]
+        pretrained_pos_embeddings @= torch.pca_lowrank(pretrained_pos_embeddings, emb_size)[-1]
+        self.token_embeds = nn.Embedding(vocab_size, pretrained_token_embeddings.shape[1])
+        self.token_embeds.weight.data = pretrained_token_embeddings
+        self.pos_embeds = nn.Embedding(pretrained_pos_embeddings.shape[0], pretrained_pos_embeddings.shape[1])
+        self.pos_embeds.weight.data = pretrained_pos_embeddings
+        self.type_embeds = nn.Embedding(2, emb_size)
+        self.num_domains = num_domains
+        cells = []
+        for i in range(num_cells):
+            cell = Cell(num_interm_nodes, emb_size, dropout_p, num_domains, genotype)
+            if i > 0 and genotype is None:
+                for node, ref_node in zip(cell.nodes, cells[-1].nodes):
+                    assert node.edges.keys() == ref_node.edges.keys()
+                    for key in node.edges:
+                        node.edges[key].alpha = ref_node.edges[key].alpha
+                    node.input_switch.alpha = ref_node.input_switch.alpha
+            cells.append(cell)
+        self.cells = nn.ModuleList(cells)
+
+        self.mlp = nn.Sequential(nn.Tanh(), nn.Dropout(dropout_p),)
+        self.lm_head = nn.Linear(emb_size, num_classes)
+        # share params
+        self.lm_head.weight = self.token_embeds.weight
+        self.is_pair_task = is_pair_task
+        self.emb_dropout = nn.Dropout(dropout_p)
+
+    def forward(self, ids: torch.LongTensor, type_ids: torch.LongTensor, msk: torch.Tensor, domain_idx: int):
+        """Pefrorms a forward pass
+
+        :param ids: tensor of shape (sentences, batch_size, seq_len)
+        :param type_ids: tensor of shape (sentences, batch_size, seq_len)
+        :param msk: tensor of shape (sentences, batch_size, seq_len)
+        :return: tensor of shape (bs)
+        """
+        pos_ids = torch.arange(ids.shape[2])[None, None].broadcast_to(ids.shape).to(ids.device)
+        x = self.token_embeds(ids) + self.pos_embeds(pos_ids) + self.type_embeds(type_ids)
+        x = self.emb_dropout(x)
+        if self.is_pair_task:
+            s0, s1 = x[0], x[1]
+        else:
+            s0 = s1 = x[0]
+        for _, cell in enumerate(self.cells):
+            s0, s1 = s1, cell(s0, s1, msk, domain_idx)
+        logits = self.mlp(s1)
+        return logits
+
+
 def test_bert():
     genotype = [[('conv7x7', 0), ('maxpool', 1)],
                 [('maxpool', 1), ('maxpool', 2)],
