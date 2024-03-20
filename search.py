@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 from argparse import ArgumentParser
 from dataset import NliDataset
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, get_cosine_schedule_with_warmup
 from model import AdaBertStudent, evaluate, distil_loss
 import numpy as np
 from tqdm.auto import tqdm
@@ -37,7 +37,7 @@ def main():
 
     max_length = 128
     batch_size = 128
-    lr = 1e-4
+    lr = 1e-1
     clip_value = 1.0
     num_cells = 1
     device = args.device
@@ -66,7 +66,9 @@ def main():
                            3, num_domains, pretrained_token_embeddigns,
                            pretrained_pos_embeddigns, num_cells=num_cells,
                            genotype=None, dropout_p=0.05).to(device)
-    optimizer = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, weight_decay=1e-6)
+    optimizer = torch.optim.SGD([p for name, p in model.named_parameters() if 'alpha' not in name], lr=lr, momentum=0.9,
+                                weight_decay=1e-4)
+    sch = get_cosine_schedule_with_warmup(optimizer, 0, epochs * len(train_dl[0]) * len(val_ds))
     optimizer_struct = torch.optim.Adam([p for name, p in model.named_parameters() if 'alpha' in name], lr=3e-4, weight_decay=1e-3)
     criterion = nn.CrossEntropyLoss()
 
@@ -91,6 +93,7 @@ def main():
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_([p for name, p in model.named_parameters() if 'alpha' not in name], clip_value)
                 optimizer.step()
+                sch.step()
 
                 # structure update
                 for val_batch in search_dl[domain_idx]:
@@ -103,7 +106,40 @@ def main():
                     optimizer_struct.zero_grad()
                     loss = 0.2 * criterion(p_logits, val_batch['labels']) + 0.8 * distil_loss(pi_logits, p_logits)
                     loss += args.lambda_reg * struct_regul(model)
+
                     loss.backward()
+                    g_val_w = [p.grad.data if p.grad is not None else torch.zeros_like(p.data) \
+                               for name, p in model.named_parameters() if 'alpha' not in name]
+                    g_val_alpha = [p.grad.data if p.grad is not None else torch.zeros_like(p.data) \
+                                   for name, p in model.named_parameters() if 'alpha' in name]
+                    eps = 0.01 / np.sqrt(sum([(g ** 2).sum().item() for g in g_val_w]))
+                    old_w = [p.data.clone() for name, p in model.named_parameters() if 'alpha' not in name] 
+
+                    w_plus = [w + eps * g for w, g in zip(old_w, g_val_w)]
+                    for p, w_p in zip([p for n, p in model.named_parameters() if 'alpha' not in n], w_plus):
+                        p.data = w_p.data
+                    p_logits = model(batch['inp_ids'], batch['type_ids'],
+                                     batch['att'].max(0).values, domain_idx if total_steps >= args.curr_steps else 0)
+                    loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(batch['logits'], p_logits)
+                    loss.backward()
+                    g_alpha_plus = [p.grad.data for n, p in model.named_parameters() if 'alpha' in n]
+                    del w_plus
+
+                    w_minus = [w - eps * g for w, g in zip(old_w, g_val_w)]
+                    for p, w_m in zip([p for n, p in model.named_parameters() if 'alpha' not in n], w_minus):
+                        p.data = w_m.data
+                    p_logits = model(batch['inp_ids'], batch['type_ids'],
+                                     batch['att'].max(0).values, domain_idx if total_steps >= args.curr_steps else 0)
+                    loss = 0.2 * criterion(p_logits, batch['labels']) + 0.8 * distil_loss(batch['logits'], p_logits)
+                    loss.backward()
+                    g_alpha_minus = [p.grad.data for n, p in model.named_parameters() if 'alpha' in n]
+
+                    curr_lr = optimizer.param_groups[0]['lr']
+                    g_so = [g_fo - curr_lr * (g_p - g_m) / (2 * eps) for g_fo, g_p, g_m in \
+                            zip(g_val_alpha, g_alpha_plus, g_alpha_minus)]
+                    for p, g in zip([p for n, p in model.named_parameters() if 'alpha' in n], g_so):
+                        p.grad.data = g.data
+
                     optimizer_struct.step()
                     break
 
