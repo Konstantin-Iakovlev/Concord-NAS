@@ -105,8 +105,8 @@ def main():
                            genotype=genotype, dropout_p=0.05).to(device)
     model.load_state_dict(torch.load(f'pretrain_{seed}.ckpt', map_location='cpu'), strict=False)
     print(sum([p.numel() for p in model.parameters()]) // 1000 / 1000, 'M')
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
-    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, epochs * len(train_dl[0]) * len(ds_configs))
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=1e-4, momentum=0.9)
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 0, epochs * len(train_dl[0]) * len(ds_configs))
     criterion = nn.CrossEntropyLoss()
     
     total_steps = 0
