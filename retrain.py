@@ -27,7 +27,7 @@ def main():
     max_length = 128
     batch_size = 128
     num_cells = 1
-    lr = 1e-3
+    lr = 1e-1
     clip_value = 1.0
     device = args.device
     epochs = args.epochs
@@ -57,8 +57,8 @@ def main():
                         genotype=genotype, dropout_p=0.05).to(device)
     print(sum([p.numel() for p in model.parameters()]) // 1000 / 1000, 'M')
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
-    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 1000, args.pretrain_steps)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=1e-4, momentum=0.9)
+    lr_scheduler = get_cosine_schedule_with_warmup(optimizer, 0, args.pretrain_steps)
     criterion = nn.CrossEntropyLoss()
 
     total_steps = 0

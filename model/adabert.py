@@ -161,7 +161,7 @@ class Cell(nn.Module):
     def __init__(self, n_nodes, channels, dropout, num_domains, genotype=None) -> None:
         """Genotype: list of genotypes for each node"""
         super().__init__()
-        self.preprocess = nn.ModuleList([nn.Sequential(nn.LayerNorm(channels), nn.Dropout(dropout)) for _ in range(2)])
+        self.preprocess = nn.ModuleList([nn.Sequential(nn.BatchNorm1d(channels), nn.Dropout(dropout)) for _ in range(2)])
         nodes = []
         for depth in range(2, n_nodes + 2):
             nodes.append(Node(f'n{depth}', depth, channels, num_domains, [gen[depth - 2] for gen in genotype] \
@@ -170,7 +170,8 @@ class Cell(nn.Module):
         self.att_weights = nn.Parameter(torch.randn(n_nodes) * 1e-3)
     
     def forward(self, s0, s1, msk, domain_idx):
-        inputs = [self.preprocess[0](s0), self.preprocess[1](s1)]
+        inputs = [self.preprocess[0](s0.transpose(1, 2)).transpose(1, 2),
+                  self.preprocess[1](s1.transpose(1, 2)).transpose(1, 2)]
         for node in self.nodes:
             out = node(inputs, msk, domain_idx)
             inputs.append(out)
